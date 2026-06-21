@@ -1,0 +1,415 @@
+<!DOCTYPE html>
+<html lang="sk">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>LCD Štatistiky</title>
+<style>
+  :root{
+    --bg:#0d0d0f; --panel:#16161a; --panel2:#1d1d22; --line:#2a2a31;
+    --text:#ececf0; --muted:#8b8b97; --gold:#c9a24b; --gold-soft:rgba(201,162,75,.14);
+    --green:#5fbf7e; --red:#d98a8a; --blue:#6ea8d8; --orange:#e0a36a;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:-apple-system,"Segoe UI",Roboto,Arial,sans-serif;background:var(--bg);color:var(--text);padding:22px 26px 60px}
+  header{display:flex;align-items:center;gap:14px;margin-bottom:8px}
+  h1{font-size:20px;font-weight:600;letter-spacing:.3px}
+  .gold{color:var(--gold)}
+  .sub{color:var(--muted);font-size:12px;margin-bottom:18px}
+  button#reload{margin-left:auto;background:var(--gold);color:#1a1407;border:none;border-radius:9px;padding:9px 16px;font-size:13px;font-weight:600;cursor:pointer}
+  button#reload:hover{filter:brightness(1.06)}
+  h2{font-size:13px;text-transform:uppercase;letter-spacing:2px;color:var(--muted);margin:26px 0 12px;border-bottom:1px solid var(--line);padding-bottom:8px}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(248px,1fr));gap:14px}
+  /* north-star */
+  .north{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:14px;margin-bottom:6px}
+  .ns{background:linear-gradient(160deg,var(--panel2),var(--panel));border:1px solid var(--line);border-radius:14px;padding:16px 18px}
+  .ns .nslabel{font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--muted)}
+  .ns .nsval{font-size:28px;font-weight:700;color:var(--gold);line-height:1.15;margin-top:4px}
+  .ns .nsrow{display:flex;align-items:baseline;gap:10px;margin-top:6px}
+  .nsnote{font-size:11px;color:var(--muted);margin:2px 0 8px;padding:8px 11px;border:1px dashed var(--line);border-radius:8px;background:rgba(224,163,106,.06)}
+  .nsnote b{color:var(--orange)}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px;position:relative}
+  .card.clickable{cursor:pointer;transition:border-color .15s, transform .15s}
+  .card.clickable:hover{border-color:var(--gold);transform:translateY(-2px)}
+  .card h3{font-size:14px;font-weight:600;margin-bottom:2px;display:flex;align-items:center;gap:8px}
+  .card .tag{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:12px}
+  .bigrow{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
+  .bigval{font-size:24px;font-weight:700;color:var(--gold);line-height:1.1}
+  .biglabel{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:1px;margin:2px 0 8px}
+  .delta{font-size:12px;font-weight:600;padding:2px 7px;border-radius:20px;white-space:nowrap}
+  .delta-up{color:var(--green);background:rgba(95,191,126,.12)}
+  .delta-down{color:var(--red);background:rgba(217,138,138,.12)}
+  .delta-neutral{color:var(--gold);background:var(--gold-soft)}
+  .delta-flat{color:var(--muted);background:rgba(139,139,151,.12)}
+  .delta-na{color:var(--muted);background:transparent;border:1px dashed var(--line)}
+  .sparkwrap{position:relative;height:44px;margin:4px 0 10px}
+  .sparkwrap canvas{position:absolute;inset:0}
+  .spark-empty{font-size:11px;color:var(--muted);font-style:italic;padding:12px 0;border-top:1px solid var(--line);border-bottom:1px solid var(--line);margin:4px 0 10px}
+  .rows{margin-top:2px}
+  .kv{display:flex;justify-content:space-between;align-items:baseline;padding:5px 0;border-top:1px solid var(--line)}
+  .kv:first-child{border-top:none}
+  .kv .k{color:var(--muted);font-size:12px}
+  .kv .v{font-size:15px;font-weight:600}
+  .detailhint{font-size:10px;color:var(--muted);margin-top:10px;text-align:right;opacity:.65}
+  .prov{font-size:10px;color:var(--orange);margin-top:6px}
+  .err{color:var(--red);font-size:12px}
+  .muted{color:var(--muted)}
+  .loading{color:var(--muted);font-size:14px;padding:40px 0;text-align:center}
+  .errors{margin-top:26px;font-size:12px;color:var(--muted)}
+  .errors .row{padding:4px 0;border-top:1px solid var(--line)}
+  .pill{display:inline-block;font-size:10px;padding:2px 8px;border-radius:20px;border:1px solid var(--line);color:var(--muted)}
+  /* modal */
+  .modal{position:fixed;inset:0;background:rgba(0,0,0,.66);display:flex;align-items:center;justify-content:center;z-index:50;padding:20px}
+  .modal.hidden{display:none}
+  .modal-box{background:var(--panel2);border:1px solid var(--line);border-radius:16px;width:min(820px,100%);max-height:90vh;overflow:auto;padding:22px 24px;position:relative}
+  .modal-box h2{border:none;color:var(--text);font-size:18px;text-transform:none;letter-spacing:0;margin:0 0 4px}
+  .modal-sub{color:var(--muted);font-size:12px;margin-bottom:14px}
+  #modal-close{position:absolute;top:14px;right:14px;background:var(--panel);color:var(--text);border:1px solid var(--line);border-radius:8px;width:32px;height:32px;font-size:15px;cursor:pointer}
+  #modal-close:hover{border-color:var(--gold)}
+  .modal-chart{height:300px;margin-bottom:8px}
+  .chiprow{display:flex;flex-wrap:wrap;gap:10px;margin:10px 0 14px}
+  .chip{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:8px 12px;min-width:96px}
+  .chip .ck{font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--muted)}
+  .chip .cv{font-size:16px;font-weight:600;margin-top:2px}
+  .modal-rows .kv .v{font-size:16px}
+  .hint{font-size:11px;color:var(--muted);margin-top:8px;text-align:right;opacity:.7}
+</style>
+</head>
+<body>
+  <header>
+    <h1><span class="gold">LCD</span> Štatistiky</h1>
+    <button id="reload">Obnoviť</button>
+  </header>
+  <div class="sub" id="sub">Načítavam dáta…</div>
+  <div id="root"><div class="loading">Načítavam štatistiky… (volajú sa API, môže to chvíľu trvať)</div></div>
+
+  <div id="modal" class="modal hidden">
+    <div class="modal-box">
+      <button id="modal-close" title="Zavrieť">✕</button>
+      <h2 id="modal-title"></h2>
+      <div class="modal-sub" id="modal-sub"></div>
+      <div class="chiprow" id="modal-chips"></div>
+      <div class="modal-chart"><canvas id="modal-canvas"></canvas></div>
+      <div class="hint" id="modal-zoomhint">Koliesko = priblíženie · ťahaním posúvaš · dvojklik = reset</div>
+      <div class="modal-rows" id="modal-rows"></div>
+      <div class="muted" id="modal-note" style="margin-top:10px;font-size:12px"></div>
+    </div>
+  </div>
+
+<script src="vendor/chart.umd.min.js"></script>
+<script src="vendor/chartjs-plugin-datalabels.min.js"></script>
+<script src="vendor/chartjs-plugin-trendline.min.js"></script>
+<script src="vendor/chartjs-plugin-annotation.min.js"></script>
+<script src="vendor/chartjs-plugin-zoom.min.js"></script>
+<script>
+// ── registrácia pluginov (datalabels NEglobálne – len na detail) ──
+const DL = window.ChartDataLabels || null;
+const ANN = window['chartjs-plugin-annotation'] || window.ChartAnnotation || null;
+const ZOOM = window.ChartZoom || window['chartjs-plugin-zoom'] || window.chartjsPluginZoom || null;
+try { if (ANN) Chart.register(ANN); } catch(e){}
+try { if (ZOOM) Chart.register(ZOOM); } catch(e){}
+
+// ── formátovače ──
+const fmt = (n) => (n==null||isNaN(n)) ? '–' : Math.round(n).toLocaleString('sk-SK');
+const eur = (n) => (n==null||isNaN(n)) ? '–' : Math.round(n).toLocaleString('sk-SK') + ' €';
+const x2  = (n) => (n==null||isNaN(n)) ? '–' : (Math.round(n*100)/100).toLocaleString('sk-SK') + '×';
+const pct = (n) => (n==null||isNaN(n)) ? '–' : (Math.round(n*1000)/10).toLocaleString('sk-SK') + ' %';
+const dec = (n) => (n==null||isNaN(n)) ? '–' : (Math.round(n*10)/10).toLocaleString('sk-SK');
+const fmtUnit = (n,u) => u==='eur'?eur(n):fmt(n);
+function rel(iso){ const s=(Date.now()-new Date(iso))/1000; if(s<90)return 'pred chvíľou'; const m=Math.round(s/60); if(m<60)return 'pred '+m+' min'; const h=Math.round(m/60); if(h<24)return 'pred '+h+' h'; return 'pred '+Math.round(h/24)+' d'; }
+function getCss(v){ return getComputedStyle(document.documentElement).getPropertyValue(v).trim() || '#c9a24b'; }
+
+let D = null;
+const CARDS = {};
+let sparkCharts = [];
+let modalChart = null;
+
+function kv(k, v){ return '<div class="kv"><span class="k">'+k+'</span><span class="v">'+v+'</span></div>'; }
+function errCard(title, tag, msg){
+  return '<div class="card"><h3>'+title+'</h3><div class="tag">'+(tag||'')+'</div><div class="err">⚠ '+msg+'</div></div>';
+}
+
+// ── delta (7-dňová zmena) – farba zohľadňuje či je nárast dobrý ──
+// goodWhenUp: true = nárast dobrý (sledovatelia, návštevy), false = nárast zlý, null = neutrálne (výdavky)
+function deltaMeta(key, goodWhenUp){
+  const dd=(D.deltas||{})[key];
+  if(!dd||dd.pct==null) return {na:true, basis:dd&&dd.basis};
+  const p=dd.pct, flat=Math.abs(p)<0.05, up=p>=0;
+  let good=null;
+  if(goodWhenUp===true) good=up; else if(goodWhenUp===false) good=!up;
+  return {pct:p, up, flat, good};
+}
+function deltaBadge(key, goodWhenUp){
+  const m=deltaMeta(key, goodWhenUp);
+  if(m.na){
+    const note=(m.basis==='stock7')?'trend sa zbiera (denné snapshoty)':'málo dát na 7d porovnanie';
+    return '<span class="delta delta-na" title="'+note+'">— 7d</span>';
+  }
+  const arrow=m.flat?'→':(m.up?'▲':'▼');
+  const cls=m.flat?'delta-flat':(m.good===true?'delta-up':(m.good===false?'delta-down':'delta-neutral'));
+  const sign=(!m.flat&&m.up)?'+':'';
+  const tip=goodWhenUp===null?'zmena vs predošlých 7 dní (výdavky – posudzuj podľa ROAS)':'zmena vs predošlých 7 dní';
+  return '<span class="delta '+cls+'" title="'+tip+'">'+arrow+' '+sign+(Math.round(m.pct*10)/10).toLocaleString('sk-SK')+' % · 7d</span>';
+}
+function lineColor(key, goodWhenUp){
+  const m=deltaMeta(key, goodWhenUp);
+  if(m.na||m.flat) return getCss('--gold');
+  if(m.good===true) return getCss('--green');
+  if(m.good===false) return getCss('--red');
+  return getCss('--gold');
+}
+
+// ── séria helpers ──
+function sumSeries(list){ const m={}; (list||[]).forEach(s=>(s||[]).forEach(p=>{ m[p.d]=(m[p.d]||0)+(+p.v||0); })); return Object.keys(m).sort().map(d=>({d,v:m[d]})); }
+function flow7(series){ if(!series||series.length<8) return null; const v=series.map(p=>+p.v||0); const a=v.slice(-7).reduce((x,y)=>x+y,0), b=v.slice(-14,-7).reduce((x,y)=>x+y,0); return b===0?null:(a-b)/b*100; }
+function statsOf(series){ if(!series||!series.length) return null; const vs=series.map(p=>+p.v||0); let mn=vs[0],mx=vs[0],bi=0,sum=0; vs.forEach((v,i)=>{ if(v<mn)mn=v; if(v>mx){mx=v;bi=i;} sum+=v; }); return {min:mn,max:mx,avg:sum/vs.length,bestDay:series[bi].d}; }
+
+// ── karta ──
+function cardHTML(desc){
+  CARDS[desc.key]=desc;
+  const s=(D.series[desc.key]||[]);
+  const spark=s.length>=2?'<div class="sparkwrap"><canvas id="spark_'+desc.key+'"></canvas></div>':'<div class="spark-empty">graf sa zobrazí po nazbieraní dát</div>';
+  let rows=''; (desc.rows||[]).forEach(r=> rows+=kv(r.k,r.v));
+  return '<div class="card clickable" data-key="'+desc.key+'">'
+    +'<h3>'+desc.icon+' '+desc.title+'</h3><div class="tag">'+(desc.tag||'')+'</div>'
+    +'<div class="bigrow"><span class="bigval">'+desc.big.value+'</span>'+deltaBadge(desc.key, desc.goodWhenUp)+'</div>'
+    +'<div class="biglabel">'+desc.big.label+'</div>'
+    +spark+'<div class="rows">'+rows+'</div>'
+    +'<div class="detailhint">Klikni pre detail a graf →</div></div>';
+}
+
+// ── north-star riadok ──
+function nsTile(label, valueHtml, series, goodWhenUp){
+  let badge='';
+  const p=flow7(series);
+  if(p!=null){ const flat=Math.abs(p)<0.05, up=p>=0; let good=goodWhenUp===null?null:(goodWhenUp?up:!up);
+    const cls=flat?'delta-flat':(good===true?'delta-up':(good===false?'delta-down':'delta-neutral'));
+    const arrow=flat?'→':(up?'▲':'▼'); const sign=(!flat&&up)?'+':'';
+    badge='<span class="delta '+cls+'">'+arrow+' '+sign+(Math.round(p*10)/10).toLocaleString('sk-SK')+' % · 7d</span>';
+  }
+  return '<div class="ns"><div class="nslabel">'+label+'</div><div class="nsrow"><span class="nsval">'+valueHtml+'</span>'+badge+'</div></div>';
+}
+
+function render(d){
+  D=d;
+  for(const k in CARDS) delete CARDS[k];
+  sparkCharts.forEach(c=>{try{c.destroy();}catch(e){}}); sparkCharts=[];
+
+  const cacheTxt = d.cached ? ' · z cache' : '';
+  const engineTxt = d.store_engine ? ' · úložisko: '+d.store_engine : '';
+  document.getElementById('sub').innerHTML =
+    'Obdobie: posledných '+d.period_days+' dní · zmena = posledných 7 dní vs predošlých 7 · <b>aktualizované '+rel(d.generated)+'</b>'+cacheTxt+engineTxt;
+
+  const marketsById={}; (d.markets||[]).forEach(m=>marketsById[m.id]=m.label);
+  let h='';
+
+  // ── NORTH-STAR (3-sekundový prehľad) ──
+  const gIds=Object.keys(d.ppc.google||{});
+  const spendSeries=sumSeries([d.series.ppc_meta].concat(gIds.map(id=>d.series['gads_'+id])));
+  const sessSeries=sumSeries(Object.keys(d.web.ga4||{}).map(id=>d.series['ga4_'+id]));
+  let spendTotal=(d.ppc.meta?+d.ppc.meta.spend||0:0); gIds.forEach(id=>{ if(d.ppc.google[id]) spendTotal+=+d.ppc.google[id].spend||0; });
+  let valTotal=(d.ppc.meta?+d.ppc.meta.conversionValue||0:0); gIds.forEach(id=>{ if(d.ppc.google[id]) valTotal+=+d.ppc.google[id].conversionValue||0; });
+  let sessTotal=0; Object.keys(d.web.ga4||{}).forEach(id=>{ if(d.web.ga4[id]) sessTotal+=+d.web.ga4[id].sessions||0; });
+  let folTotal=0; const mo=d.organic.meta; if(mo){ folTotal+=+(mo.facebook&&(mo.facebook.followers||mo.facebook.fans))||0; if(mo.instagram&&mo.instagram.followers!=null) folTotal+=+mo.instagram.followers||0; } if(d.organic.youtube) folTotal+=+d.organic.youtube.subscribers||0;
+  const roasTotal=spendTotal>0?valTotal/spendTotal:null;
+  h+='<div class="north">';
+  h+=nsTile('PPC výdavky (30d)', eur(spendTotal), spendSeries, null);
+  h+=nsTile('ROAS · podľa reklám', roasTotal==null?'–':x2(roasTotal), null, null);
+  h+=nsTile('Web návštevy (30d)', fmt(sessTotal), sessSeries, true);
+  h+=nsTile('Sledovatelia spolu', fmt(folTotal), null, true);
+  h+='</div>';
+  h+='<div class="nsnote">⚠ <b>ROAS = hodnota konverzií nahlásená reklamami</b> (Google/Meta tracking) ÷ výdavky — <b>NIE sú to reálne tržby zo Shoptetu</b> (ten zatiaľ nie je napojený). Súčet Meta+Google môže navyše tú istú objednávku počítať dvakrát. Po napojení Shoptet API ukáže skutočný ROAS z tržieb.</div>';
+
+  // ── ORGANIKA ──
+  h+='<h2>Organika (spoločná značka)</h2><div class="grid">';
+  const meta=d.organic.meta;
+  if(meta){
+    const fbRows=[];
+    if(meta.facebook.impressions!=null) fbRows.push({k:'FB dosah (28d)',v:fmt(meta.facebook.impressions)});
+    if(meta.facebook.engagement!=null) fbRows.push({k:'FB interakcie (28d)',v:fmt(meta.facebook.engagement)});
+    h+=cardHTML({key:'organic_fb',icon:'📘',title:'Facebook',tag:meta.facebook.name||'',goodWhenUp:true,
+      big:{label:'Sledovatelia',value:fmt(meta.facebook.followers||meta.facebook.fans)},rows:fbRows,unit:'num'});
+    if(meta.instagram&&meta.instagram.followers!=null){
+      h+=cardHTML({key:'organic_ig',icon:'📸',title:'Instagram',tag:meta.instagram.username?('@'+meta.instagram.username):'',goodWhenUp:true,
+        big:{label:'Sledovatelia',value:fmt(meta.instagram.followers)},
+        rows:[{k:'Príspevky',v:fmt(meta.instagram.media)}].concat(meta.instagram.reach!=null?[{k:'IG dosah (28d)',v:fmt(meta.instagram.reach)}]:[]),unit:'num'});
+    } else {
+      h+='<div class="card"><h3>📸 Instagram</h3><div class="tag"></div><div class="muted">'+((meta.instagram&&meta.instagram.note)||'nedostupné')+'</div></div>';
+    }
+  } else {
+    let inner='<div class="err">⚠ '+(d.errors.meta||'nedostupné')+'</div>';
+    const md=d.meta_debug;
+    if(md){
+      if(md.error) inner+='<div class="muted" style="margin-top:10px;font-size:12px">Diagnostika tokenu: '+md.error+'</div>';
+      else{ inner+='<div style="margin-top:10px">'+kv('Token platný',md.valid?'✅ áno':'❌ NIE')+kv('Expiruje',md.expires_at)+kv('Dáta do',md.data_access_expires_at);
+        if(md.token_error) inner+='<div class="err" style="margin-top:6px">'+md.token_error+'</div>';
+        if(md.scopes) inner+='<div class="muted" style="font-size:11px;word-break:break-word;padding-top:4px">'+md.scopes+'</div>'; inner+='</div>'; }
+    }
+    h+='<div class="card"><h3>📘 Meta</h3><div class="tag">FB + IG</div>'+inner+'</div>';
+  }
+  const yt=d.organic.youtube;
+  if(yt){
+    const ytRows=[{k:'Zhliadnutia (spolu)',v:fmt(yt.views)},{k:'Videá',v:fmt(yt.videos)}];
+    if(d.youtube_history==='analytics_api') ytRows.push({k:'História',v:'reálna (Analytics API)'});
+    h+=cardHTML({key:'organic_yt',icon:'▶',title:'YouTube',tag:yt.title||'',goodWhenUp:true,
+      big:{label:'Odberatelia',value:fmt(yt.subscribers)},rows:ytRows,unit:'num'});
+  } else { h+=errCard('▶ YouTube','',d.errors.youtube||'nedostupné'); }
+  h+='</div>';
+
+  // ── PPC (výdavky = neutrálna farba) ──
+  h+='<h2>PPC reklamy</h2><div class="grid">';
+  const ma=d.ppc.meta;
+  if(ma){
+    h+=cardHTML({key:'ppc_meta',icon:'📘',title:'Meta Ads',tag:'jeden účet',goodWhenUp:null,
+      big:{label:'Výdavky (30d)',value:eur(ma.spend)},
+      rows:[{k:'Hodnota konverzií (tracking)',v:eur(ma.conversionValue)},{k:'ROAS (z reklám)',v:x2(ma.roas)}],unit:'eur'});
+  } else { h+=errCard('📘 Meta Ads','jeden účet',d.errors.meta_ads||'nedostupné'); }
+  gIds.forEach((mid)=>{
+    const g=d.ppc.google[mid]; const lbl=marketsById[mid]||mid.toUpperCase();
+    if(g){ h+=cardHTML({key:'gads_'+mid,icon:'🔍',title:'Google Ads',tag:lbl,goodWhenUp:null,
+        big:{label:'Výdavky',value:eur(g.spend)},
+        rows:[{k:'Konverzie',v:dec(g.conversions)},{k:'Hodnota (tracking)',v:eur(g.conversionValue)},{k:'ROAS (z reklám)',v:x2(g.roas)},{k:'Kliky',v:fmt(g.clicks)}],unit:'eur'});
+    } else { h+=errCard('🔍 Google Ads',lbl,(d.errors['google_ads_'+mid])||'nedostupné'); }
+  });
+  h+='</div>';
+
+  // ── WEB ──
+  h+='<h2>Web (návštevnosť & SEO)</h2><div class="grid">';
+  Object.keys(d.web.ga4||{}).forEach((mid)=>{
+    const a=d.web.ga4[mid]; const lbl=marketsById[mid]||mid.toUpperCase();
+    if(a){ h+=cardHTML({key:'ga4_'+mid,icon:'📈',title:'GA4',tag:lbl,goodWhenUp:true,
+        big:{label:'Návštevy',value:fmt(a.sessions)},
+        rows:[{k:'Používatelia',v:fmt(a.users)},{k:'Zobrazenia stránok',v:fmt(a.pageviews)},{k:'Konverzie',v:dec(a.conversions)}],unit:'num'});
+    } else { h+=errCard('📈 GA4',lbl,(d.errors['ga4_'+mid])||'nedostupné'); }
+  });
+  Object.keys(d.web.gsc||{}).forEach((mid)=>{
+    const s=d.web.gsc[mid]; const lbl=marketsById[mid]||mid.toUpperCase();
+    if(s){ h+=cardHTML({key:'gsc_'+mid,icon:'🔎',title:'Search Console',tag:lbl,goodWhenUp:true,
+        big:{label:'Kliky z Google',value:fmt(s.clicks)},
+        rows:[{k:'Zobrazenia',v:fmt(s.impressions)},{k:'CTR',v:pct(s.ctr)},{k:'Priem. pozícia',v:dec(s.position)}],unit:'num'});
+    } else { h+=errCard('🔎 Search Console',lbl,(d.errors['gsc_'+mid])||'nedostupné'); }
+  });
+  h+='</div>';
+
+  // ── TikTok ──
+  h+='<h2>TikTok</h2><div class="grid"><div class="card"><h3>🎵 TikTok</h3><div class="tag"></div><div class="muted">'+(d.tiktok&&d.tiktok.note||'neaktívne')+'</div></div></div>';
+
+  // ── chyby ──
+  const errKeys=Object.keys(d.errors||{});
+  if(errKeys.length){ h+='<div class="errors"><h2>Detaily chýb</h2>'; errKeys.forEach(k=>{ h+='<div class="row"><span class="pill">'+k+'</span> '+d.errors[k]+'</div>'; }); h+='</div>'; }
+
+  document.getElementById('root').innerHTML=h;
+  drawSparklines();
+}
+
+// ── index prvého provizórneho bodu (dnes/včera) ──
+function provIndex(series){ const pf=D&&D.provisional_from; if(!pf) return series.length; for(let i=0;i<series.length;i++){ if(series[i].d>=pf) return i; } return series.length; }
+
+function drawSparklines(){
+  Object.keys(CARDS).forEach((key)=>{
+    const desc=CARDS[key]; const s=(D.series[key]||[]);
+    if(s.length<2) return;
+    const cv=document.getElementById('spark_'+key); if(!cv) return;
+    const col=lineColor(key, desc.goodWhenUp); const pi=provIndex(s);
+    sparkCharts.push(new Chart(cv.getContext('2d'),{
+      type:'line',
+      data:{labels:s.map(p=>p.d),datasets:[{data:s.map(p=>p.v),borderColor:col,borderWidth:1.6,pointRadius:0,fill:true,backgroundColor:'rgba(201,162,75,.10)',tension:.3,
+        segment:{borderDash:ctx=> ctx.p0DataIndex>=pi-1 ? [4,3] : undefined}}]},
+      options:{responsive:true,maintainAspectRatio:false,animation:false,
+        plugins:{legend:{display:false},tooltip:{enabled:false},datalabels:{display:false}},
+        scales:{x:{display:false},y:{display:false}}}
+    }));
+  });
+}
+
+// ── detail modal ──
+function openDetail(key){
+  const desc=CARDS[key]; if(!desc) return;
+  const s=(D.series[key]||[]); const unit=desc.unit; const col=lineColor(key, desc.goodWhenUp);
+  const dd=(D.deltas||{})[key];
+  document.getElementById('modal-title').textContent=desc.icon+' '+desc.title+(desc.tag?(' · '+desc.tag):'');
+  const basisTxt=dd&&dd.basis==='stock7'?'počet ku dňu (história odberateľov/sledovateľov)':'denné hodnoty z API';
+  document.getElementById('modal-sub').textContent=desc.big.label+': '+desc.big.value+'  ·  '+basisTxt;
+
+  // štatistiky
+  const st=statsOf(s);
+  const chips=document.getElementById('modal-chips');
+  if(st){
+    chips.innerHTML=
+      '<div class="chip"><div class="ck">Priemer/deň</div><div class="cv">'+fmtUnit(st.avg,unit)+'</div></div>'+
+      '<div class="chip"><div class="ck">Maximum</div><div class="cv">'+fmtUnit(st.max,unit)+'</div></div>'+
+      '<div class="chip"><div class="ck">Minimum</div><div class="cv">'+fmtUnit(st.min,unit)+'</div></div>'+
+      '<div class="chip"><div class="ck">Najlepší deň</div><div class="cv">'+st.bestDay+'</div></div>'+
+      '<div class="chip"><div class="ck">7-dňová zmena</div><div class="cv">'+deltaBadge(key, desc.goodWhenUp)+'</div></div>';
+  } else chips.innerHTML='';
+
+  // rows
+  let rh=''; (desc.rows||[]).forEach(r=> rh+=kv(r.k,r.v));
+  document.getElementById('modal-rows').innerHTML=rh;
+
+  const note=document.getElementById('modal-note');
+  const zoomhint=document.getElementById('modal-zoomhint');
+  if(s.length<2){
+    zoomhint.style.display='none';
+    note.textContent=dd&&dd.basis==='stock7'
+      ?'Graf sa napĺňa z dennej histórie – pribudne bod za každý deň, čo appku spustíš (alebo hneď celý, ak je YouTube Analytics OAuth zapnutý).'
+      :'Zatiaľ málo denných dát z API na vykreslenie grafu.';
+  } else { zoomhint.style.display=''; note.textContent=''; }
+
+  // porovnávacia čiara (predošlé obdobie) – len pre flow metriky
+  const isFlow=dd&&dd.basis==='flow7';
+  const comp = isFlow && s.length>=8 ? s.map((p,i)=> i>=7 ? (+s[i-7].v||0) : null) : null;
+  const pi=provIndex(s);
+
+  const datasets=[{
+    label:desc.big.label, data:s.map(p=>p.v), borderColor:col, borderWidth:2,
+    pointRadius:s.length>40?0:2, fill:true, backgroundColor:'rgba(201,162,75,.08)', tension:.25,
+    segment:{borderDash:ctx=> ctx.p0DataIndex>=pi-1 ? [5,4] : undefined},
+    trendlineLinear:{ colorMin:'rgba(110,168,216,.7)', colorMax:'rgba(110,168,216,.7)', lineStyle:'dotted', width:1.5 }
+  }];
+  if(comp) datasets.push({ label:'predošlé obdobie', data:comp, borderColor:'rgba(139,139,151,.55)', borderWidth:1.2, borderDash:[5,4], pointRadius:0, fill:false, tension:.25, datalabels:{display:false}, trendlineLinear:false });
+
+  if(modalChart){ try{modalChart.destroy();}catch(e){} modalChart=null; }
+  const annotation = st ? { annotations:{ avg:{ type:'line', yMin:st.avg, yMax:st.avg, borderColor:'rgba(201,162,75,.45)', borderWidth:1, borderDash:[6,4],
+        label:{ display:true, content:'priemer', position:'end', backgroundColor:'rgba(201,162,75,.15)', color:'#c9a24b', font:{size:10} } } } } : {};
+
+  modalChart=new Chart(document.getElementById('modal-canvas').getContext('2d'),{
+    type:'line', data:{labels:s.map(p=>p.d),datasets:datasets}, plugins: DL?[DL]:[],
+    options:{responsive:true,maintainAspectRatio:false,
+      interaction:{intersect:false,mode:'index'},
+      plugins:{
+        legend:{display:!!comp, labels:{color:'#8b8b97',font:{size:11},boxWidth:14}},
+        tooltip:{callbacks:{label:(c)=> (c.dataset.label||'')+': '+fmtUnit(c.parsed.y,unit)}},
+        annotation:annotation,
+        zoom: ZOOM?{ pan:{enabled:true,mode:'x'}, zoom:{ wheel:{enabled:true}, pinch:{enabled:true}, mode:'x' } }:undefined,
+        datalabels: DL?{ align:'top', anchor:'end', color:col, font:{weight:'600',size:11},
+          formatter:(v,ctx)=> ctx.dataIndex===ctx.dataset.data.length-1 ? fmtUnit(v,unit) : '' }:undefined
+      },
+      scales:{
+        x:{ticks:{color:'#8b8b97',maxTicksLimit:8,font:{size:10}},grid:{color:'rgba(42,42,49,.5)'}},
+        y:{ticks:{color:'#8b8b97',font:{size:10},callback:(v)=> unit==='eur'?(v+' €'):(+v).toLocaleString('sk-SK')},grid:{color:'rgba(42,42,49,.5)'}}
+      }}
+  });
+  document.getElementById('modal').classList.remove('hidden');
+}
+function closeModal(){ document.getElementById('modal').classList.add('hidden'); if(modalChart){try{modalChart.destroy();}catch(e){}modalChart=null;} }
+
+document.getElementById('root').addEventListener('click',(e)=>{ const c=e.target.closest('.card.clickable'); if(c&&c.dataset.key) openDetail(c.dataset.key); });
+document.getElementById('modal-close').addEventListener('click',closeModal);
+document.getElementById('modal').addEventListener('click',(e)=>{ if(e.target.id==='modal') closeModal(); });
+document.addEventListener('keydown',(e)=>{ if(e.key==='Escape') closeModal(); });
+
+async function load(){
+  document.getElementById('root').innerHTML='<div class="loading">Načítavam štatistiky…</div>';
+  try{
+    const r=await fetch('/api/stats',{cache:'no-store'});
+    const d=await r.json();
+    if(d.error){ document.getElementById('root').innerHTML='<div class="err">'+d.error+'</div>'; return; }
+    render(d);
+  }catch(e){ document.getElementById('root').innerHTML='<div class="err">Nepodarilo sa načítať: '+e.message+'</div>'; }
+}
+document.getElementById('reload').addEventListener('click',()=>{ fetch('/api/stats?force=1',{cache:'no-store'}).then(r=>r.json()).then(d=>{ if(d.error){document.getElementById('root').innerHTML='<div class="err">'+d.error+'</div>';return;} render(d); }).catch(e=>{ document.getElementById('root').innerHTML='<div class="err">Nepodarilo sa načítať: '+e.message+'</div>'; }); });
+load();
+</script>
+</body>
+</html>

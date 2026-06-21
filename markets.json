@@ -1,0 +1,19 @@
+{
+  "_info": "Verejné ID účtov pre jednotlivé trhy (NIE tajné). Tajné kľúče/tokeny sú v config.local.json. PPC (Google Ads) + web (GA4/GSC) sú per trh; Meta a YouTube organika sú spoločné (riešené v config.local.json).",
+  "markets": [
+    {
+      "id": "sk",
+      "label": "🇸🇰 SK",
+      "google_ads_customer_id": "8878726501",
+      "ga4_property_id": "356219817",
+      "gsc_site_url": "sc-domain:luxurycardesign.sk"
+    },
+    {
+      "id": "cz",
+      "label": "🇨🇿 CZ",
+      "google_ads_customer_id": "8187015893",
+      "ga4_property_id": "383485750",
+      "gsc_site_url": "sc-domain:luxurycardesign.cz"
+    }
+  ]
+}
