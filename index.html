@@ -215,7 +215,7 @@ function render(d){
   h+='<div class="north">';
   const igViews=(mo&&mo.instagram&&mo.instagram.views!=null)?mo.instagram.views:null;
   h+=nsTile('PPC výdavky (30d)', eur(spendTotal), spendSeries, null);
-  h+=nsTile('IG organické zhliadnutia (28d)', igViews==null?'–':fmt(igViews), null, true);
+  h+=nsTile('IG zhliadnutia (30d)', igViews==null?'–':fmt(igViews), null, true);
   h+=nsTile('Web návštevy (30d)', fmt(sessTotal), sessSeries, true);
   h+=nsTile('Sledovatelia spolu', fmt(folTotal), null, true);
   h+='</div>';
@@ -226,17 +226,18 @@ function render(d){
   const meta=d.organic.meta;
   if(meta){
     const fbRows=[];
-    if(meta.facebook.pageViews!=null) fbRows.push({k:'Zobrazenia stránky (28d)',v:fmt(meta.facebook.pageViews)});
-    if(meta.facebook.engagement!=null) fbRows.push({k:'Interakcie (28d)',v:fmt(meta.facebook.engagement)});
-    if(meta.facebook.newFollows!=null) fbRows.push({k:'Noví fanúšikovia (28d)',v:fmt(meta.facebook.newFollows)});
+    if(meta.facebook.organicImpressions!=null) fbRows.push({k:'Organické zobrazenia príspevkov (28d)',v:fmt(meta.facebook.organicImpressions)});
+    if(meta.facebook.videoViews!=null) fbRows.push({k:'Zhliadnutia videí (28d)',v:fmt(meta.facebook.videoViews)});
+    if(meta.facebook.pageVisits!=null) fbRows.push({k:'Návštevy stránky (28d)',v:fmt(meta.facebook.pageVisits)});
+    if(meta.facebook.newFollows!=null) fbRows.push({k:'Noví sledovatelia (28d)',v:fmt(meta.facebook.newFollows)});
     h+=cardHTML({key:'organic_fb',icon:'📘',title:'Facebook',tag:meta.facebook.name||'',goodWhenUp:true,
       big:{label:'Sledovatelia',value:fmt(meta.facebook.followers||meta.facebook.fans)},rows:fbRows,unit:'num'});
     if(meta.instagram&&meta.instagram.followers!=null){
       const igRows=[];
-      if(meta.instagram.views!=null) igRows.push({k:'Zhliadnutia (28d)',v:fmt(meta.instagram.views)});
-      if(meta.instagram.reach!=null) igRows.push({k:'Dosah (28d)',v:fmt(meta.instagram.reach)});
-      if(meta.instagram.interactions!=null) igRows.push({k:'Interakcie (28d)',v:fmt(meta.instagram.interactions)});
-      if(meta.instagram.profileViews!=null) igRows.push({k:'Návštevy profilu (28d)',v:fmt(meta.instagram.profileViews)});
+      if(meta.instagram.views!=null) igRows.push({k:'Zhliadnutia (30d)',v:fmt(meta.instagram.views)});
+      if(meta.instagram.reach!=null) igRows.push({k:'Dosah (30d)',v:fmt(meta.instagram.reach)});
+      if(meta.instagram.interactions!=null) igRows.push({k:'Interakcie (30d)',v:fmt(meta.instagram.interactions)});
+      if(meta.instagram.profileViews!=null) igRows.push({k:'Návštevy profilu (30d)',v:fmt(meta.instagram.profileViews)});
       igRows.push({k:'Príspevky',v:fmt(meta.instagram.media)});
       h+=cardHTML({key:'organic_ig',icon:'📸',title:'Instagram',tag:meta.instagram.username?('@'+meta.instagram.username):'',goodWhenUp:true,
         big:{label:'Sledovatelia',value:fmt(meta.instagram.followers)},rows:igRows,unit:'num'});

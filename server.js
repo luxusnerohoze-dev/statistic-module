@@ -187,12 +187,13 @@ async function metaOrganic() {
   } catch (e) { /* ostane systémový token */ }
   try {
     const ptok = encodeURIComponent(pageTok || t);
-    const r2 = await fetch('https://graph.facebook.com/' + V + '/' + m.facebook_page_id + '/insights?metric=page_post_engagements,page_views_total,page_daily_follows_unique&period=days_28&access_token=' + ptok);
+    const r2 = await fetch('https://graph.facebook.com/' + V + '/' + m.facebook_page_id + '/insights?metric=page_posts_impressions_organic,page_video_views,page_views_total,page_daily_follows_unique&period=days_28&access_token=' + ptok);
     const j2 = await r2.json();
     (j2.data || []).forEach((d) => {
       const vals = d.values || []; const v = vals.length ? vals[vals.length - 1].value : 0;
-      if (d.name === 'page_post_engagements') out.facebook.engagement = num(v);
-      if (d.name === 'page_views_total') out.facebook.pageViews = num(v);
+      if (d.name === 'page_posts_impressions_organic') out.facebook.organicImpressions = num(v);
+      if (d.name === 'page_video_views') out.facebook.videoViews = num(v);
+      if (d.name === 'page_views_total') out.facebook.pageVisits = num(v);
       if (d.name === 'page_daily_follows_unique') out.facebook.newFollows = num(v);
     });
   } catch (e) { /* insights nepovinné */ }
@@ -211,7 +212,7 @@ async function metaOrganic() {
       const j4 = await r4.json();
       if (!j4.error) out.instagram = { username: j4.username, followers: num(j4.followers_count), media: num(j4.media_count) };
       // Organické metriky za 28 dní (period=day + total_value + rozsah since/until).
-      const since = isoDaysAgo(28), until = isoToday();
+      const since = isoDaysAgo(30), until = isoToday();
       const r5 = await fetch('https://graph.facebook.com/' + V + '/' + igId +
         '/insights?metric=views,reach,total_interactions,profile_views&period=day&metric_type=total_value&since=' + since + '&until=' + until + '&access_token=' + enc);
       const j5 = await r5.json();
