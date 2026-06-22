@@ -35,6 +35,10 @@ migrateSnapshots(store, SNAP_FILE); // jednorazovo prenesie staré snapshoty
 const num = (x) => (x == null || isNaN(x)) ? 0 : Number(x);
 const isoDaysAgo = (n) => new Date(Date.now() - n * 86400000).toISOString().slice(0, 10);
 const isoToday = () => new Date().toISOString().slice(0, 10);
+// dátum n dní pred zadaným dátumom (YYYY-MM-DD)
+const isoDaysAgoFrom = (endStr, n) => { const d = new Date(endStr + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() - n); return d.toISOString().slice(0, 10); };
+// aktuálne okno (start/end) – nastaví ho buildStats podľa vybraného obdobia. Fetch funkcie ho čítajú.
+let RANGE = { start: isoDaysAgo(PERIOD), end: isoToday(), days: PERIOD };
 function metaErr(e) {
   if (!e) return 'neznáma chyba';
   return (e.message || 'chyba') + ' [code ' + e.code +
@@ -95,7 +99,7 @@ async function googleAds(customerId) {
   if (g.login_customer_id) headers['login-customer-id'] = String(g.login_customer_id).replace(/-/g, '');
   const query = "SELECT segments.date, metrics.cost_micros, metrics.conversions, metrics.conversions_value, " +
     "metrics.clicks, metrics.impressions FROM customer " +
-    "WHERE segments.date BETWEEN '" + isoDaysAgo(PERIOD) + "' AND '" + isoToday() + "' ORDER BY segments.date";
+    "WHERE segments.date BETWEEN '" + RANGE.start + "' AND '" + RANGE.end + "' ORDER BY segments.date";
   const r = await fetch('https://googleads.googleapis.com/v23/customers/' + customerId + '/googleAds:search',
     { method: 'POST', headers, body: JSON.stringify({ query }) });
   const text = await r.text();
@@ -120,7 +124,7 @@ async function googleAds(customerId) {
 async function ga4(propertyId) {
   const at = await googleToken();
   const body = {
-    dateRanges: [{ startDate: PERIOD + 'daysAgo', endDate: 'today' }],
+    dateRanges: [{ startDate: RANGE.start, endDate: RANGE.end }],
     dimensions: [{ name: 'date' }],
     metrics: [{ name: 'sessions' }, { name: 'totalUsers' }, { name: 'conversions' }, { name: 'screenPageViews' }],
     orderBys: [{ dimension: { dimensionName: 'date' } }]
@@ -147,7 +151,7 @@ async function ga4(propertyId) {
 async function gsc(siteUrl) {
   const at = await googleToken();
   const url = 'https://www.googleapis.com/webmasters/v3/sites/' + encodeURIComponent(siteUrl) + '/searchAnalytics/query';
-  const body = { startDate: isoDaysAgo(PERIOD), endDate: isoToday(), dimensions: ['date'] };
+  const body = { startDate: RANGE.start, endDate: RANGE.end, dimensions: ['date'] };
   const r = await fetch(url, { method: 'POST', headers: { 'Authorization': 'Bearer ' + at, 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
   const j = await r.json();
   if (j.error) throw new Error(j.error.message || 'GSC chyba');
@@ -185,12 +189,14 @@ async function metaOrganic() {
     const jp = await rp.json();
     if (jp.access_token) pageTok = jp.access_token;
   } catch (e) { /* ostane systémový token */ }
+  // POZN: Nové „Views/Reach/Interactions" z FB Business Suite Meta cez Graph API NEdáva
+  // (sú to interné definície). Berieme reálne dostupné organické metriky a presne ich labelujeme.
   try {
     const ptok = encodeURIComponent(pageTok || t);
-    const r2 = await fetch('https://graph.facebook.com/' + V + '/' + m.facebook_page_id + '/insights?metric=page_posts_impressions_organic,page_video_views,page_views_total,page_daily_follows_unique&period=days_28&access_token=' + ptok);
+    const r2 = await fetch('https://graph.facebook.com/' + V + '/' + m.facebook_page_id + '/insights?metric=page_posts_impressions_organic,page_video_views,page_views_total,page_daily_follows_unique&period=day&since=' + RANGE.start + '&until=' + RANGE.end + '&access_token=' + ptok);
     const j2 = await r2.json();
     (j2.data || []).forEach((d) => {
-      const vals = d.values || []; const v = vals.length ? vals[vals.length - 1].value : 0;
+      const v = (d.values || []).reduce((a, x) => a + (+x.value || 0), 0);
       if (d.name === 'page_posts_impressions_organic') out.facebook.organicImpressions = num(v);
       if (d.name === 'page_video_views') out.facebook.videoViews = num(v);
       if (d.name === 'page_views_total') out.facebook.pageVisits = num(v);
@@ -211,8 +217,8 @@ async function metaOrganic() {
       const r4 = await fetch('https://graph.facebook.com/' + V + '/' + igId + '?fields=username,followers_count,media_count&access_token=' + enc);
       const j4 = await r4.json();
       if (!j4.error) out.instagram = { username: j4.username, followers: num(j4.followers_count), media: num(j4.media_count) };
-      // Organické metriky za 28 dní (period=day + total_value + rozsah since/until).
-      const since = isoDaysAgo(30), until = isoToday();
+      // Organické metriky za vybrané obdobie (rozsah RANGE).
+      const since = RANGE.start, until = RANGE.end;
       const r5 = await fetch('https://graph.facebook.com/' + V + '/' + igId +
         '/insights?metric=views,reach,total_interactions,profile_views&period=day&metric_type=total_value&since=' + since + '&until=' + until + '&access_token=' + enc);
       const j5 = await r5.json();
@@ -237,7 +243,7 @@ async function metaAds() {
   if (!t || !m.ad_account_id) throw new Error('chýba Meta token / ad_account_id');
   const acct = String(m.ad_account_id).startsWith('act_') ? m.ad_account_id : ('act_' + m.ad_account_id);
   const r = await fetch('https://graph.facebook.com/' + V + '/' + acct +
-    '/insights?fields=spend,action_values&time_increment=1&date_preset=last_30d&access_token=' + encodeURIComponent(t));
+    '/insights?fields=spend,action_values&time_increment=1&time_range[since]=' + RANGE.start + '&time_range[until]=' + RANGE.end + '&access_token=' + encodeURIComponent(t));
   const j = await r.json();
   if (j.error) throw new Error('Meta Ads: ' + metaErr(j.error));
   let spend = 0, val = 0;
@@ -309,12 +315,25 @@ async function metaDebug() {
 }
 
 // ── Agregátor ──
-async function buildStats() {
+// opts: { days?:N, start?:'YYYY-MM-DD', end?:'YYYY-MM-DD', compare?:bool }
+async function buildStats(opts) {
+  opts = opts || {};
+  let start, end, days;
+  if (opts.start && opts.end) {
+    start = opts.start; end = opts.end;
+    days = Math.round((Date.parse(end) - Date.parse(start)) / 86400000) + 1;
+  } else {
+    days = Math.max(1, Math.min(366, num(opts.days) || PERIOD));
+    end = isoToday(); start = isoDaysAgoFrom(end, days - 1);
+  }
+  RANGE = { start, end, days };
+
   const result = {
-    period_days: PERIOD, generated: new Date().toISOString(),
+    period_days: days, period_start: start, period_end: end, compare: !!opts.compare,
+    generated: new Date().toISOString(),
     organic: {}, ppc: { google: {}, meta: null }, web: { ga4: {}, gsc: {} },
     tiktok: { active: false, note: 'Bez tokenu / Ads Manager CONTRACT_PENDING – napojíme po aktivácii.' },
-    series: {}, deltas: {}, errors: {},
+    series: {}, deltas: {}, prevSeries: {}, errors: {},
     provisional_from: isoDaysAgo(1), // body s dátumom >= toto sú provizórne (dnes/včera)
     store_engine: store.engine
   };
@@ -375,25 +394,55 @@ async function buildStats() {
     setFlow('gsc_' + mk.id, result.web.gsc[mk.id]);
   });
 
+  // ── Porovnanie: predošlé rovnako dlhé obdobie (primárne flow série na prekrytie grafov) ──
+  if (opts.compare) {
+    const prevEnd = isoDaysAgoFrom(start, 1);
+    const prevStart = isoDaysAgoFrom(prevEnd, days - 1);
+    RANGE = { start: prevStart, end: prevEnd, days };
+    result.prev_start = prevStart; result.prev_end = prevEnd;
+    const pm = await run('p_meta_ads', metaAds);
+    if (pm) result.prevSeries.ppc_meta = pm.series || [];
+    for (const mk of (marketsCfg.markets || [])) {
+      const pg = await run('p_gads_' + mk.id, () => googleAds(mk.google_ads_customer_id));
+      if (pg) result.prevSeries['gads_' + mk.id] = pg.series || [];
+      const pa = await run('p_ga4_' + mk.id, () => ga4(mk.ga4_property_id));
+      if (pa) result.prevSeries['ga4_' + mk.id] = pa.series || [];
+      const ps = await run('p_gsc_' + mk.id, () => gsc(mk.gsc_site_url));
+      if (ps) result.prevSeries['gsc_' + mk.id] = ps.series || [];
+    }
+    // followers (stock) – predošlé obdobie zo store histórie
+    const shiftPrev = (key, metric) => { const full = store.series(metric); result.prevSeries[key] = full.filter((p) => p.d <= prevEnd).slice(-Math.max(days, 1)); };
+    shiftPrev('organic_fb', 'fb_followers');
+    shiftPrev('organic_ig', 'ig_followers');
+    shiftPrev('organic_yt', 'yt_subscribers');
+    RANGE = { start, end, days };
+  }
+
   return result;
 }
 
 // ── HTTP server (s cache) ──
-let _cache = { data: null, at: 0 };
+let _cache = {}; // key = query string → { data, at }
 function startServer() {
   const server = http.createServer(async (req, res) => {
     if (req.url && req.url.indexOf('/api/stats') === 0) {
       // CORS zámerne nenastavujeme – dashboard je same-origin (localhost:4787),
       // a '*' by umožnil iným webom v prehliadači čítať biznis čísla.
       if (!cfg) { res.writeHead(500, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'Chýba config.local.json – vyplň kľúče.' })); return; }
-      const force = /[?&]force=1/.test(req.url);
-      if (!force && _cache.data && (Date.now() - _cache.at) < CACHE_TTL) {
-        const cached = Object.assign({}, _cache.data, { cached: true, cache_age_ms: Date.now() - _cache.at });
+      const sp = new URLSearchParams(req.url.split('?')[1] || '');
+      const force = sp.get('force') === '1';
+      const opts = { days: num(sp.get('days')) || PERIOD, compare: sp.get('compare') === '1' };
+      const cs = sp.get('start'), ce = sp.get('end');
+      if (cs && ce) { opts.start = cs; opts.end = ce; delete opts.days; }
+      const ckey = JSON.stringify(opts);
+      const c = _cache[ckey];
+      if (!force && c && (Date.now() - c.at) < CACHE_TTL) {
+        const cached = Object.assign({}, c.data, { cached: true, cache_age_ms: Date.now() - c.at });
         res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(cached)); return;
       }
       try {
-        const data = await buildStats();
-        _cache = { data, at: Date.now() };
+        const data = await buildStats(opts);
+        _cache[ckey] = { data, at: Date.now() };
         res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(data));
       } catch (e) { res.writeHead(500, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: String(e.message || e) })); }
       return;
