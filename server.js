@@ -126,14 +126,14 @@ async function ga4(propertyId) {
   const body = {
     dateRanges: [{ startDate: RANGE.start, endDate: RANGE.end }],
     dimensions: [{ name: 'date' }],
-    metrics: [{ name: 'sessions' }, { name: 'totalUsers' }, { name: 'conversions' }, { name: 'screenPageViews' }],
+    metrics: [{ name: 'sessions' }, { name: 'totalUsers' }, { name: 'conversions' }, { name: 'screenPageViews' }, { name: 'purchaseRevenue' }, { name: 'transactions' }],
     orderBys: [{ dimension: { dimensionName: 'date' } }]
   };
   const r = await fetch('https://analyticsdata.googleapis.com/v1beta/properties/' + propertyId + ':runReport',
     { method: 'POST', headers: { 'Authorization': 'Bearer ' + at, 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
   const j = await r.json();
   if (j.error) throw new Error(j.error.message || 'GA4 chyba');
-  let sessions = 0, users = 0, conv = 0, pv = 0;
+  let sessions = 0, users = 0, conv = 0, pv = 0, revenue = 0, trans = 0;
   const series = [];
   (j.rows || []).forEach((row) => {
     const dv = (row.dimensionValues && row.dimensionValues[0] && row.dimensionValues[0].value) || '';
@@ -141,10 +141,11 @@ async function ga4(propertyId) {
     const s = mv[0] ? num(mv[0].value) : 0;
     sessions += s; users += mv[1] ? num(mv[1].value) : 0;
     conv += mv[2] ? num(mv[2].value) : 0; pv += mv[3] ? num(mv[3].value) : 0;
+    revenue += mv[4] ? num(mv[4].value) : 0; trans += mv[5] ? num(mv[5].value) : 0;
     if (dv.length === 8) series.push({ d: dv.slice(0, 4) + '-' + dv.slice(4, 6) + '-' + dv.slice(6, 8), v: s });
   });
   series.sort((a, b) => a.d < b.d ? -1 : 1);
-  return { sessions, users, conversions: conv, pageviews: pv, series };
+  return { sessions, users, conversions: conv, pageviews: pv, revenue, transactions: trans, aov: trans > 0 ? revenue / trans : 0, series };
 }
 
 // ── Search Console (per trh) – denný rozpad ──
@@ -378,6 +379,14 @@ async function buildStats(opts) {
     result.web.gsc[mk.id] = await run('gsc_' + mk.id, () => gsc(mk.gsc_site_url));
   }
   result.markets = (marketsCfg.markets || []).map((m) => ({ id: m.id, label: m.label }));
+
+  // ── Skutočný ROAS z reálnych tržieb (GA4 e-commerce) per trh ──
+  result.real_roas = {};
+  (marketsCfg.markets || []).forEach((mk) => {
+    const rev = result.web.ga4[mk.id] && result.web.ga4[mk.id].revenue;
+    const sp = result.ppc.google[mk.id] && result.ppc.google[mk.id].spend;
+    if (rev != null && sp > 0 && (rev / sp) < 50) result.real_roas[mk.id] = rev / sp; // >50× = takmer isto rozdielna mena (tržby vs výdavky), nezobrazíme
+  });
 
   // ── História stock metrík (sociálne siete) → store ──
   const today = isoToday();

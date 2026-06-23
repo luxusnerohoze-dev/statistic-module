@@ -279,7 +279,7 @@ function render(d){
   h+=nsTile('Web návštevy'+W, fmt(sessTotal), sessSeries, true, prevSess);
   h+=nsTile('Sledovatelia spolu', fmt(folTotal), null, true);
   h+='</div>';
-  h+='<div class="nsnote">⚠ <b>ROAS na kartách = hodnota nákupov nahlásená reklamami</b> (Meta/Google pixel, vrátane view-through – preto býva vysoký) ÷ výdavky. <b>NIE sú to reálne tržby zo Shoptetu</b> (ten zatiaľ nie je napojený) a cez platformy sa môže tá istá objednávka počítať viackrát. Skutočný ROAS z tržieb až po napojení Shoptet API.</div>';
+  h+='<div class="nsnote"><b>„ROAS z tržieb*"</b> na GA4 kartách = <b>reálne tržby</b> (GA4 e-commerce) ÷ výdavky reklám = skutočná návratnosť. „ROAS (z reklám)" je len hodnota nahlásená Meta/Google pixelom (view-through, býva nadhodnotený). <b>*</b> predpokladá rovnakú menu tržieb a výdavkov (SK €, CZ Kč – ak sa líši, treba prepočet).</div>';
 
   // ── ALERTY „čo si všimnúť" ──
   const alerts=[];
@@ -381,9 +381,14 @@ function render(d){
   h+='<h2>Web (návštevnosť & SEO)</h2><div class="grid">';
   Object.keys(d.web.ga4||{}).forEach((mid)=>{
     const a=d.web.ga4[mid]; const lbl=marketsById[mid]||mid.toUpperCase();
-    if(a){ h+=cardHTML({key:'ga4_'+mid,icon:'📈',title:'GA4',tag:lbl,goodWhenUp:true,
-        big:{label:'Návštevy',value:fmt(a.sessions)},
-        rows:[{k:'Používatelia',v:fmt(a.users)},{k:'Zobrazenia stránok',v:fmt(a.pageviews)},{k:'Konverzie',v:dec(a.conversions)}],unit:'num'});
+    if(a){ const grr=(d.real_roas||{})[mid]; const gr=[];
+      if(a.revenue) gr.push({k:'Tržby (e-commerce)',v:fmt(a.revenue)});
+      if(a.transactions) gr.push({k:'Objednávky',v:fmt(a.transactions)});
+      if(a.aov) gr.push({k:'AOV',v:fmt(a.aov)});
+      if(grr!=null) gr.push({k:'ROAS z tržieb*',v:x2(grr)});
+      gr.push({k:'Používatelia',v:fmt(a.users)},{k:'Konverzie',v:dec(a.conversions)});
+      h+=cardHTML({key:'ga4_'+mid,icon:'📈',title:'GA4',tag:lbl,goodWhenUp:true,
+        big:{label:'Návštevy',value:fmt(a.sessions)},rows:gr,unit:'num'});
     } else { h+=errCard('📈 GA4',lbl,(d.errors['ga4_'+mid])||'nedostupné'); }
   });
   Object.keys(d.web.gsc||{}).forEach((mid)=>{
