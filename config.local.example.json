@@ -65,6 +65,13 @@
     "_info": "Spotreba OpenAI API v €. admin_key MUSÍ byť ADMIN kľúč (sk-admin-…) z platform.openai.com/settings/organization/admin-keys – bežný projektový kľúč (sk-proj-…) náklady nečíta. Náklady sú v USD, prepočítajú sa kurzom usd_to_eur.",
     "admin_key": "",
     "usd_to_eur": 0.92,
+    "label": "OpenAI"
+  },
+
+  "anthropic": {
+    "_info": "Spotreba Anthropic (Claude) API v € – TOTO je spotreba Luxie (chatbot beží na Claude). admin_key = ADMIN kľúč (sk-ant-admin…) z console.anthropic.com → Organization settings → Admin keys. Náklady v USD, prepočet kurzom usd_to_eur. label = názov karty.",
+    "admin_key": "",
+    "usd_to_eur": 0.92,
     "label": "Luxia (chatbot)"
   }
 }

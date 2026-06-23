@@ -368,6 +368,31 @@ async function openaiCost() {
   return { spend_eur: usd * fx, spend_usd: usd, fx, series };
 }
 
+// ── Anthropic (Claude) API spotreba – Cost Report API, ADMIN kľúč (sk-ant-admin…) ──
+// Toto je spotreba Luxie (chatbot beží na Anthropic API). Náklady v USD → prepočet na €.
+async function anthropicCost() {
+  const o = (cfg && cfg.anthropic) || {};
+  const key = o.admin_key;
+  if (!key) throw new Error('chýba anthropic.admin_key (admin kľúč sk-ant-admin…)');
+  const fx = (o.usd_to_eur != null) ? num(o.usd_to_eur) : 0.92;
+  const days = Math.max(1, Math.min(180, RANGE.days || 30));
+  const url = 'https://api.anthropic.com/v1/organizations/cost_report?starting_at=' + RANGE.start + 'T00:00:00Z&bucket_width=1d&limit=' + (days + 1);
+  const r = await fetch(url, { headers: { 'x-api-key': key, 'anthropic-version': '2023-06-01' } });
+  const j = await r.json();
+  if (j.type === 'error' || j.error) throw new Error('Anthropic: ' + ((j.error && j.error.message) || JSON.stringify(j).slice(0, 120)));
+  let usd = 0; const series = [];
+  (j.data || []).forEach((b) => {
+    const d = (b.starting_at || '').slice(0, 10);
+    if (d < RANGE.start || d > RANGE.end) return;
+    let dayUsd = 0;
+    (b.results || []).forEach((res) => { dayUsd += num(res.amount); });
+    usd += dayUsd;
+    series.push({ d, v: dayUsd * fx });
+  });
+  series.sort((a, b) => a.d < b.d ? -1 : 1);
+  return { spend_eur: usd * fx, spend_usd: usd, fx, series, label: (o.label || 'Luxia (chatbot)') };
+}
+
 // ── Agregátor ──
 // opts: { days?:N, start?:'YYYY-MM-DD', end?:'YYYY-MM-DD', compare?:bool }
 async function buildStats(opts) {
@@ -441,9 +466,19 @@ async function buildStats(opts) {
   if (cfg && cfg.openai && cfg.openai.admin_key) {
     const oc = await run('openai', openaiCost);
     if (oc) {
-      result.openai = { spend_eur: oc.spend_eur, spend_usd: oc.spend_usd, fx: oc.fx, label: (cfg.openai.label || 'Luxia (chatbot)') };
+      result.openai = { spend_eur: oc.spend_eur, spend_usd: oc.spend_usd, fx: oc.fx, label: (cfg.openai.label || 'OpenAI') };
       result.series.openai_cost = oc.series;
       result.deltas.openai_cost = { pct: flow7(oc.series), basis: 'flow7' };
+    }
+  }
+
+  // ── Anthropic (Claude) API spotreba – Luxia ──
+  if (cfg && cfg.anthropic && cfg.anthropic.admin_key) {
+    const ac = await run('anthropic', anthropicCost);
+    if (ac) {
+      result.anthropic = { spend_eur: ac.spend_eur, spend_usd: ac.spend_usd, fx: ac.fx, label: ac.label };
+      result.series.anthropic_cost = ac.series;
+      result.deltas.anthropic_cost = { pct: flow7(ac.series), basis: 'flow7' };
     }
   }
 
