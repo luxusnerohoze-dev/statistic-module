@@ -438,27 +438,52 @@ async function buildStats(opts) {
   };
   const run = async (label, fn) => { try { return await fn(); } catch (e) { result.errors[label] = String(e.message || e); return null; } };
 
-  result.organic.meta = await run('meta', metaOrganic);
-  if (!result.organic.meta) result.meta_debug = await metaDebug();
-  result.organic.youtube = await run('youtube', youtube);
-  result.ppc.meta = await run('meta_ads', metaAds);
+  // ── FÁZA 1: aktuálne obdobie – všetky API volania PARALELNE (rýchle načítanie) ──
+  const tasks = [];
+  tasks.push((async () => {
+    result.organic.meta = await run('meta', metaOrganic);
+    if (!result.organic.meta) result.meta_debug = await metaDebug();
+    const igId = result.organic.meta && result.organic.meta._igId;
+    if (igId) result.top_content = await run('ig_top', () => igTopContent(igId));
+  })());
+  tasks.push((async () => {
+    result.organic.youtube = await run('youtube', youtube);
+    const yt2 = result.organic.youtube;
+    const ytOauth = cfg && cfg.youtube && cfg.youtube.oauth && cfg.youtube.oauth.refresh_token;
+    if (yt2 && ytOauth) {
+      const yh = await run('youtube_analytics', () => youtubeAnalytics(yt2.subscribers));
+      if (yh && yh.subsSeries.length) { store.upsertMany(yh.subsSeries.map((p) => ({ metric: 'yt_subscribers', date: p.d, value: p.v }))); result.youtube_history = 'analytics_api'; }
+    }
+  })());
+  tasks.push((async () => { result.ppc.meta = await run('meta_ads', metaAds); })());
+  (marketsCfg.markets || []).forEach((mk) => {
+    tasks.push((async () => { result.ppc.google[mk.id] = await run('google_ads_' + mk.id, () => googleAds(mk.google_ads_customer_id)); })());
+    tasks.push((async () => { result.web.ga4[mk.id] = await run('ga4_' + mk.id, () => ga4(mk.ga4_property_id)); })());
+    tasks.push((async () => { result.web.gsc[mk.id] = await run('gsc_' + mk.id, () => gsc(mk.gsc_site_url)); })());
+  });
+  tasks.push((async () => {
+    if (cfg && cfg.openai && cfg.openai.admin_key) {
+      const oc = await run('openai', openaiCost);
+      if (oc) { result.openai = { spend_eur: oc.spend_eur, spend_usd: oc.spend_usd, fx: oc.fx, label: (cfg.openai.label || 'OpenAI'), topup_url: (cfg.openai.topup_url || 'https://platform.openai.com/settings/organization/billing/overview'), credit_usd: (cfg.openai.credit_usd != null ? num(cfg.openai.credit_usd) : null), credit_eur: (cfg.openai.credit_eur != null ? num(cfg.openai.credit_eur) : null) }; result.series.openai_cost = oc.series; result.deltas.openai_cost = { pct: flow7(oc.series), basis: 'flow7' }; }
+    }
+  })());
+  tasks.push((async () => {
+    if (cfg && cfg.anthropic && cfg.anthropic.admin_key) {
+      const ac = await run('anthropic', anthropicCost);
+      if (ac) { result.anthropic = { keys: ac.keys.map((k) => ({ id: k.id, name: k.name, spend_eur: k.spend_eur, spend_usd: k.spend_usd })), total_eur: ac.total_eur, total_usd: ac.total_usd, fx: ac.fx, topup_url: (cfg.anthropic.topup_url || 'https://console.anthropic.com/settings/billing'), credit_usd: (cfg.anthropic.credit_usd != null ? num(cfg.anthropic.credit_usd) : null), credit_eur: (cfg.anthropic.credit_eur != null ? num(cfg.anthropic.credit_eur) : null) }; ac.keys.forEach((k) => { result.series['anth_' + k.id] = k.series; result.deltas['anth_' + k.id] = { pct: flow7(k.series), basis: 'flow7' }; }); }
+    }
+  })());
+  await Promise.all(tasks);
 
-  for (const mk of (marketsCfg.markets || [])) {
-    result.ppc.google[mk.id] = await run('google_ads_' + mk.id, () => googleAds(mk.google_ads_customer_id));
-    result.web.ga4[mk.id] = await run('ga4_' + mk.id, () => ga4(mk.ga4_property_id));
-    result.web.gsc[mk.id] = await run('gsc_' + mk.id, () => gsc(mk.gsc_site_url));
-  }
   result.markets = (marketsCfg.markets || []).map((m) => ({ id: m.id, label: m.label }));
 
-  // ── Skutočný ROAS z reálnych tržieb (GA4 e-commerce) per trh ──
   result.real_roas = {};
   (marketsCfg.markets || []).forEach((mk) => {
     const rev = result.web.ga4[mk.id] && result.web.ga4[mk.id].revenue;
     const sp = result.ppc.google[mk.id] && result.ppc.google[mk.id].spend;
-    if (rev != null && sp > 0 && (rev / sp) < 50) result.real_roas[mk.id] = rev / sp; // >50× = takmer isto rozdielna mena (tržby vs výdavky), nezobrazíme
+    if (rev != null && sp > 0 && (rev / sp) < 50) result.real_roas[mk.id] = rev / sp;
   });
 
-  // ── História stock metrík (sociálne siete) → store ──
   const today = isoToday();
   const meta = result.organic.meta;
   const yt = result.organic.youtube;
@@ -467,44 +492,6 @@ async function buildStats(opts) {
   if (meta && meta.instagram && meta.instagram.followers != null) rows.push({ metric: 'ig_followers', date: today, value: num(meta.instagram.followers) });
   if (yt) { rows.push({ metric: 'yt_subscribers', date: today, value: num(yt.subscribers) }); rows.push({ metric: 'yt_views', date: today, value: num(yt.views) }); }
   if (rows.length) store.upsertMany(rows);
-
-  // YouTube reálna história (ak je OAuth) – prepíše snapshoty skutočnými dennými dátami
-  const ytOauth = cfg && cfg.youtube && cfg.youtube.oauth && cfg.youtube.oauth.refresh_token;
-  if (yt && ytOauth) {
-    const yh = await run('youtube_analytics', () => youtubeAnalytics(yt.subscribers));
-    if (yh && yh.subsSeries.length) {
-      store.upsertMany(yh.subsSeries.map((p) => ({ metric: 'yt_subscribers', date: p.d, value: p.v })));
-      result.youtube_history = 'analytics_api';
-    }
-  }
-
-  // ── Top obsah na Instagrame ──
-  const igId = meta && meta._igId;
-  if (igId) result.top_content = await run('ig_top', () => igTopContent(igId));
-
-  // ── OpenAI API spotreba (€) ──
-  if (cfg && cfg.openai && cfg.openai.admin_key) {
-    const oc = await run('openai', openaiCost);
-    if (oc) {
-      result.openai = { spend_eur: oc.spend_eur, spend_usd: oc.spend_usd, fx: oc.fx, label: (cfg.openai.label || 'OpenAI'), topup_url: (cfg.openai.topup_url || 'https://platform.openai.com/settings/organization/billing/overview'), credit_eur: (cfg.openai.credit_eur != null ? num(cfg.openai.credit_eur) : null) };
-      result.series.openai_cost = oc.series;
-      result.deltas.openai_cost = { pct: flow7(oc.series), basis: 'flow7' };
-    }
-  }
-
-  // ── Anthropic (Claude) API spotreba – rozpis po kľúčoch ──
-  if (cfg && cfg.anthropic && cfg.anthropic.admin_key) {
-    const ac = await run('anthropic', anthropicCost);
-    if (ac) {
-      result.anthropic = {
-        keys: ac.keys.map((k) => ({ id: k.id, name: k.name, spend_eur: k.spend_eur, spend_usd: k.spend_usd })),
-        total_eur: ac.total_eur, total_usd: ac.total_usd, fx: ac.fx,
-        topup_url: (cfg.anthropic.topup_url || 'https://console.anthropic.com/settings/billing'),
-        credit_eur: (cfg.anthropic.credit_eur != null ? num(cfg.anthropic.credit_eur) : null)
-      };
-      ac.keys.forEach((k) => { result.series['anth_' + k.id] = k.series; result.deltas['anth_' + k.id] = { pct: flow7(k.series), basis: 'flow7' }; });
-    }
-  }
 
   // ── Série + delty ──
   const setFlow = (key, obj) => {

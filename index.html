@@ -247,6 +247,18 @@ function nsTile(label, valueHtml, series, goodWhenUp, prevSeries){
   return '<div class="ns"><div class="nslabel">'+label+'</div><div class="nsrow"><span class="nsval">'+valueHtml+'</span>'+badge+'</div></div>';
 }
 
+// súhrnná dlaždica nákladov (spolu + zostatok kreditu + doplniť) – pre Anthropic, OpenAI aj budúce
+function costTile(label, totEur, totUsd, o){
+  let credit;
+  if(o.credit_usd!=null){ const ce=o.credit_usd*(o.fx||0.92); credit='<div class="nslabel" style="margin-top:6px">Kredit ostáva: <b style="color:var(--gold)">'+o.credit_usd.toFixed(2)+' $</b> (≈ '+ce.toFixed(2)+' €)</div>'; }
+  else if(o.credit_eur!=null){ credit='<div class="nslabel" style="margin-top:6px">Kredit ostáva: <b style="color:var(--gold)">'+o.credit_eur.toFixed(2)+' €</b></div>'; }
+  else { credit='<div class="nslabel" style="margin-top:6px;color:var(--muted)">Zostatok: zadaj <b>credit_usd</b> do configu, alebo klikni na doplniť ↓</div>'; }
+  return '<div class="ns"><div class="nslabel">'+label+'</div>'
+    +'<div class="nsrow"><span class="nsval">'+(totEur||0).toFixed(2)+' €</span><span class="delta delta-neutral">'+(totUsd||0).toFixed(2)+' $</span></div>'
+    +credit
+    +(o.topup_url?'<div style="margin-top:6px"><a class="topup" href="'+o.topup_url+'" target="_blank" rel="noopener">💳 doplniť kredit ↗</a></div>':'')
+    +'</div>';
+}
 function render(d){
   D=d;
   const W=' ('+(d.period_days||30)+'d)';
@@ -402,29 +414,28 @@ function render(d){
   });
   h+='</div>';
 
-  // ── NÁKLADY — API kľúče (Anthropic per kľúč + OpenAI) ──
+  // ── NÁKLADY — API & nástroje (súhrn + zostatky + rozpis) ──
   if((d.anthropic && d.anthropic.keys) || d.openai){
-    h+='<h2>Náklady — API kľúče'+W+'</h2>';
+    h+='<h2>Náklady — API & nástroje'+W+'</h2>';
+    h+='<div class="north">';
+    if(d.anthropic && d.anthropic.keys) h+=costTile('Anthropic — kľúče spolu'+W, d.anthropic.total_eur, d.anthropic.total_usd, d.anthropic);
+    if(d.openai) h+=costTile('OpenAI spolu'+W, d.openai.spend_eur, d.openai.spend_usd, d.openai);
+    h+='</div>';
     if(d.anthropic && d.anthropic.keys){
-      const a=d.anthropic;
-      h+='<div class="north"><div class="ns"><div class="nslabel">Anthropic — kľúče spolu'+W+'</div>'
-        +'<div class="nsrow"><span class="nsval">'+(a.total_eur||0).toFixed(2)+' €</span><span class="delta delta-neutral">'+(a.total_usd||0).toFixed(2)+' $</span></div>'
-        +(a.credit_eur!=null?'<div class="nslabel" style="margin-top:6px">Kredit ostáva: <b style="color:var(--gold)">'+a.credit_eur.toFixed(2)+' €</b></div>':'')
-        +'<div style="margin-top:6px"><a class="topup" href="'+a.topup_url+'" target="_blank" rel="noopener">💳 doplniť kredit ↗</a></div></div></div>';
       h+='<div class="grid">';
-      (a.keys||[]).forEach(k=> h+=cardHTML({key:'anth_'+k.id,icon:'🟣',title:k.name,tag:'Anthropic kľúč',goodWhenUp:null,
+      (d.anthropic.keys||[]).forEach(k=> h+=cardHTML({key:'anth_'+k.id,icon:'🟣',title:k.name,tag:'Anthropic kľúč',goodWhenUp:null,
         big:{label:'Spotreba'+W,value:(k.spend_eur||0).toFixed(2)+' €'},
         rows:[{k:'V USD',v:(k.spend_usd||0).toFixed(2)+' $'}],unit:'eur'}));
       h+='</div>';
-      h+='<div class="nsnote">Spotreba kľúčov je <b>odhad z usage × oficiálny cenník</b> – presné fakturované čísla nájdeš po kliknutí na „doplniť kredit". Tvoja osobná Claude spotreba (Claude Code/konzola) sem nepatrí, tu sú len volania cez API kľúče.</div>';
     }
     if(d.openai){
-      h+='<h2>OpenAI'+W+'</h2><div class="grid">';
+      h+='<div class="grid">';
       h+=cardHTML({key:'openai_cost',icon:'🤖',title:'OpenAI API',tag:(d.openai.label||'spotreba'),goodWhenUp:null,
         big:{label:'Spotreba'+W,value:(d.openai.spend_eur||0).toFixed(2)+' €'},
-        rows:[].concat(d.openai.credit_eur!=null?[{k:'Kredit ostáva',v:(d.openai.credit_eur||0).toFixed(2)+' €'}]:[]).concat([{k:'V USD',v:(d.openai.spend_usd||0).toFixed(4)+' $'},{k:'Doplniť',v:'<a class="topup" href="'+d.openai.topup_url+'" target="_blank" rel="noopener">💳 doplniť € ↗</a>'}]),unit:'eur'});
+        rows:[{k:'V USD',v:(d.openai.spend_usd||0).toFixed(4)+' $'}],unit:'eur'});
       h+='</div>';
     }
+    h+='<div class="nsnote">Spotreba Anthropic kľúčov je <b>odhad z usage × oficiálny cenník</b>. Zostatok kreditu API neposkytuje – číslo „Kredit ostáva" je z configu (<b>credit_usd</b>), reálny zostatok + dobitie po kliknutí na „💳 doplniť kredit". Tvoja osobná Claude spotreba (Claude Code/konzola) sem nepatrí.</div>';
   }
 
   // ── TikTok ──
