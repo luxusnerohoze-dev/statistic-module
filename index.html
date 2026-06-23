@@ -40,6 +40,12 @@
   .ns .nsrow{display:flex;align-items:baseline;gap:10px;margin-top:6px}
   .nsnote{font-size:11px;color:var(--muted);margin:2px 0 8px;padding:8px 11px;border:1px dashed var(--line);border-radius:8px;background:rgba(224,163,106,.06)}
   .nsnote b{color:var(--orange)}
+  .alerts{display:flex;flex-direction:column;gap:7px;margin:0 0 18px}
+  .alert{font-size:12.5px;padding:9px 13px;border-radius:9px;border-left:3px solid;line-height:1.4}
+  .alert.warn{background:rgba(217,138,138,.10);border-color:var(--red);color:#e9b7b7}
+  .alert.good{background:rgba(95,191,126,.10);border-color:var(--green);color:#a9dcbb}
+  .alert.info{background:rgba(110,168,216,.10);border-color:var(--blue);color:#b7d2ea}
+  .alert.ok{background:rgba(139,139,151,.08);border-color:var(--line);color:var(--muted)}
   .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px;position:relative}
   .card.clickable{cursor:pointer;transition:border-color .15s, transform .15s}
   .card.clickable:hover{border-color:var(--gold);transform:translateY(-2px)}
@@ -63,6 +69,15 @@
   .kv .k{color:var(--muted);font-size:12px}
   .kv .v{font-size:15px;font-weight:600}
   .detailhint{font-size:10px;color:var(--muted);margin-top:10px;text-align:right;opacity:.65}
+  .topgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(290px,1fr));gap:12px;margin-bottom:8px}
+  .tc{display:flex;gap:12px;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px}
+  .tcimg{width:64px;height:64px;border-radius:9px;background-size:cover;background-position:center;flex:0 0 auto;background-color:var(--panel2)}
+  .tcph{display:flex;align-items:center;justify-content:center;font-size:24px}
+  .tcbody{min-width:0;flex:1}
+  .tccap{font-size:12px;color:var(--text);line-height:1.35;max-height:50px;overflow:hidden;margin-bottom:6px}
+  .tcstats{font-size:13px;font-weight:600;color:var(--gold)}
+  .tcmeta{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-top:3px}
+  .tcmeta a{color:var(--gold);text-decoration:none;font-size:14px;margin-left:4px}
   .prov{font-size:10px;color:var(--orange);margin-top:6px}
   .err{color:var(--red);font-size:12px}
   .muted{color:var(--muted)}
@@ -266,6 +281,28 @@ function render(d){
   h+='</div>';
   h+='<div class="nsnote">⚠ <b>ROAS na kartách = hodnota nákupov nahlásená reklamami</b> (Meta/Google pixel, vrátane view-through – preto býva vysoký) ÷ výdavky. <b>NIE sú to reálne tržby zo Shoptetu</b> (ten zatiaľ nie je napojený) a cez platformy sa môže tá istá objednávka počítať viackrát. Skutočný ROAS z tržieb až po napojení Shoptet API.</div>';
 
+  // ── ALERTY „čo si všimnúť" ──
+  const alerts=[];
+  Object.keys(d.errors||{}).forEach(k=>{ if(!/^p_/.test(k) && k!=='ig_top') alerts.push({lvl:'warn',t:'Zdroj „'+k+'" nedostupný: '+String(d.errors[k]).slice(0,70)}); });
+  const chkRoas=(obj,name)=>{ if(obj && obj.roas!=null && obj.spend>5 && obj.roas<2.5) alerts.push({lvl:'warn',t:name+': ROAS '+x2(obj.roas)+' — nízka návratnosť z reklám'}); };
+  chkRoas(d.ppc.meta,'Meta Ads');
+  Object.keys(d.ppc.google||{}).forEach(id=>chkRoas(d.ppc.google[id],'Google Ads '+id.toUpperCase()));
+  const per=(m)=> m.period?'vs predošlé obdobie':'(7d)';
+  const chkDrop=(key,label)=>{ const m=deltaMeta(key,true); if(!m.na && m.good===false && Math.abs(m.pct)>=15) alerts.push({lvl:'warn',t:label+' '+(m.up?'+':'')+Math.round(m.pct)+' % '+per(m)}); };
+  Object.keys(d.web.ga4||{}).forEach(id=>chkDrop('ga4_'+id,'Web návštevy '+id.toUpperCase()+':'));
+  Object.keys(d.web.gsc||{}).forEach(id=>chkDrop('gsc_'+id,'Kliky z Google '+id.toUpperCase()+':'));
+  [['organic_fb','Facebook'],['organic_ig','Instagram'],['organic_yt','YouTube']].forEach(([k,lbl])=>{ const m=deltaMeta(k,true); if(!m.na && m.good===false && Math.abs(m.pct)>=2) alerts.push({lvl:'warn',t:lbl+': ubúdajú sledovatelia ('+Math.round(m.pct)+' %)'}); });
+  const chkUp=(key,label)=>{ const m=deltaMeta(key,true); if(!m.na && m.good===true && m.pct>=25) alerts.push({lvl:'good',t:label+' +'+Math.round(m.pct)+' % '+per(m)+' 🚀'}); };
+  Object.keys(d.web.ga4||{}).forEach(id=>chkUp('ga4_'+id,'Web návštevy '+id.toUpperCase()+':'));
+  Object.keys(d.web.gsc||{}).forEach(id=>chkUp('gsc_'+id,'Kliky z Google '+id.toUpperCase()+':'));
+  if(alerts.length){
+    h+='<div class="alerts">';
+    alerts.slice(0,8).forEach(a=> h+='<div class="alert '+a.lvl+'">'+(a.lvl==='good'?'✅':'⚠️')+' '+a.t+'</div>');
+    h+='</div>';
+  } else {
+    h+='<div class="alerts"><div class="alert ok">✓ Nič kritické — kľúčové metriky sú v poriadku za zvolené obdobie.</div></div>';
+  }
+
   // ── ORGANIKA ──
   h+='<h2>Organika (spoločná značka)</h2><div class="grid">';
   const meta=d.organic.meta;
@@ -308,6 +345,20 @@ function render(d){
       big:{label:'Odberatelia',value:fmt(yt.subscribers)},rows:ytRows,unit:'num'});
   } else { h+=errCard('▶ YouTube','',d.errors.youtube||'nedostupné'); }
   h+='</div>';
+
+  // ── TOP OBSAH (Instagram) ──
+  if(d.top_content && d.top_content.length){
+    h+='<h2>Top obsah — Instagram'+W+'</h2><div class="topgrid">';
+    d.top_content.forEach((p)=>{
+      const thumb=p.thumb?('<div class="tcimg" style="background-image:url(\''+p.thumb+'\')"></div>'):'<div class="tcimg tcph">🎬</div>';
+      const cap=((p.caption||'').replace(/</g,'&lt;'))||'(bez popisu)';
+      const link=p.permalink?('<a href="'+p.permalink+'" target="_blank" rel="noopener" title="Otvoriť na Instagrame">↗</a>'):'';
+      h+='<div class="tc">'+thumb+'<div class="tcbody"><div class="tccap">'+cap+'</div>'
+        +'<div class="tcstats">👁 '+fmt(p.views)+' &nbsp; ❤ '+fmt(p.likes)+' &nbsp; 💬 '+fmt(p.comments)+'</div>'
+        +'<div class="tcmeta">'+(p.type||'')+' · '+(p.date||'')+link+'</div></div></div>';
+    });
+    h+='</div>';
+  }
 
   // ── PPC (výdavky = neutrálna farba) ──
   h+='<h2>PPC reklamy</h2><div class="grid">';

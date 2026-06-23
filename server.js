@@ -233,7 +233,35 @@ async function metaOrganic() {
   } else {
     out.instagram = { note: 'IG business účet nenájdený' };
   }
+  if (igId) out._igId = igId; // pre Top obsah
   return out;
+}
+
+// ── Top obsah na Instagrame (najlepšie príspevky za obdobie podľa zhliadnutí) ──
+async function igTopContent(igId) {
+  const m = (cfg && cfg.meta) || {};
+  const enc = encodeURIComponent(m.access_token);
+  const r = await fetch('https://graph.facebook.com/' + V + '/' + igId +
+    '/media?fields=id,caption,permalink,media_type,timestamp,like_count,comments_count,thumbnail_url,media_url&limit=25&access_token=' + enc);
+  const j = await r.json();
+  if (j.error) throw new Error('IG media: ' + metaErr(j.error));
+  const items = j.data || [];
+  const inP = items.filter((p) => p.timestamp && p.timestamp.slice(0, 10) >= RANGE.start && p.timestamp.slice(0, 10) <= RANGE.end);
+  let pool = (inP.length >= 3 ? inP : items).slice(0, 12);
+  await Promise.all(pool.map(async (p) => {
+    try {
+      const ri = await fetch('https://graph.facebook.com/' + V + '/' + p.id + '/insights?metric=views&access_token=' + enc);
+      const ji = await ri.json();
+      const d = ji.data && ji.data[0];
+      p._views = num(d && d.values && d.values[0] && d.values[0].value);
+    } catch (e) { p._views = 0; }
+  }));
+  pool.sort((a, b) => (b._views || 0) - (a._views || 0));
+  return pool.slice(0, 5).map((p) => ({
+    caption: (p.caption || '').slice(0, 90), permalink: p.permalink, type: p.media_type,
+    date: (p.timestamp || '').slice(0, 10), views: num(p._views), likes: num(p.like_count),
+    comments: num(p.comments_count), thumb: p.thumbnail_url || p.media_url || ''
+  }));
 }
 
 // ── Meta Ads – denný rozpad ──
@@ -370,6 +398,10 @@ async function buildStats(opts) {
       result.youtube_history = 'analytics_api';
     }
   }
+
+  // ── Top obsah na Instagrame ──
+  const igId = meta && meta._igId;
+  if (igId) result.top_content = await run('ig_top', () => igTopContent(igId));
 
   // ── Série + delty ──
   const setFlow = (key, obj) => {
