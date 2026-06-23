@@ -156,25 +156,36 @@ function errCard(title, tag, msg){
 
 // ── delta (7-dňová zmena) – farba zohľadňuje či je nárast dobrý ──
 // goodWhenUp: true = nárast dobrý (sledovatelia, návštevy), false = nárast zlý, null = neutrálne (výdavky)
+function dirOf(p, goodWhenUp, period){
+  const flat=Math.abs(p)<0.05, up=p>=0;
+  let good=null; if(goodWhenUp===true) good=up; else if(goodWhenUp===false) good=!up;
+  return {pct:p, up, flat, good, period:!!period};
+}
 function deltaMeta(key, goodWhenUp){
   const dd=(D.deltas||{})[key];
+  // Porovnanie zapnuté → zmena vs predošlé rovnako dlhé obdobie
+  if(D.compare && D.prevSeries && D.prevSeries[key] && D.prevSeries[key].length){
+    const cur=D.series[key]||[], prev=D.prevSeries[key];
+    let c,p;
+    if(dd && dd.basis==='stock7'){ c=+( (cur[cur.length-1]||{}).v )||0; p=+( (prev[prev.length-1]||{}).v )||0; }
+    else { c=cur.reduce((a,x)=>a+(+x.v||0),0); p=prev.reduce((a,x)=>a+(+x.v||0),0); }
+    if(p!==0) return dirOf((c-p)/p*100, goodWhenUp, true);
+  }
   if(!dd||dd.pct==null) return {na:true, basis:dd&&dd.basis};
-  const p=dd.pct, flat=Math.abs(p)<0.05, up=p>=0;
-  let good=null;
-  if(goodWhenUp===true) good=up; else if(goodWhenUp===false) good=!up;
-  return {pct:p, up, flat, good};
+  return dirOf(dd.pct, goodWhenUp, false);
 }
 function deltaBadge(key, goodWhenUp){
   const m=deltaMeta(key, goodWhenUp);
   if(m.na){
-    const note=(m.basis==='stock7')?'trend sa zbiera (denné snapshoty)':'málo dát na 7d porovnanie';
-    return '<span class="delta delta-na" title="'+note+'">— 7d</span>';
+    const note=(m.basis==='stock7')?'trend sa zbiera (denné snapshoty)':'zapni Porovnať alebo zvoľ dlhšie obdobie';
+    return '<span class="delta delta-na" title="'+note+'">— zmena</span>';
   }
+  const suffix=m.period?'vs pred.':'7d';
   const arrow=m.flat?'→':(m.up?'▲':'▼');
   const cls=m.flat?'delta-flat':(m.good===true?'delta-up':(m.good===false?'delta-down':'delta-neutral'));
   const sign=(!m.flat&&m.up)?'+':'';
-  const tip=goodWhenUp===null?'zmena vs predošlých 7 dní (výdavky – posudzuj podľa ROAS)':'zmena vs predošlých 7 dní';
-  return '<span class="delta '+cls+'" title="'+tip+'">'+arrow+' '+sign+(Math.round(m.pct*10)/10).toLocaleString('sk-SK')+' % · 7d</span>';
+  const tip=(m.period?'zmena vs predošlé rovnako dlhé obdobie':'zmena posledných 7 dní vs predošlých 7')+(goodWhenUp===null?' (výdavky – posudzuj podľa ROAS)':'');
+  return '<span class="delta '+cls+'" title="'+tip+'">'+arrow+' '+sign+(Math.round(m.pct*10)/10).toLocaleString('sk-SK')+' % · '+suffix+'</span>';
 }
 function lineColor(key, goodWhenUp){
   const m=deltaMeta(key, goodWhenUp);
@@ -204,13 +215,17 @@ function cardHTML(desc){
 }
 
 // ── north-star riadok ──
-function nsTile(label, valueHtml, series, goodWhenUp){
-  let badge='';
-  const p=flow7(series);
+function nsTile(label, valueHtml, series, goodWhenUp, prevSeries){
+  let badge='', p=null, period=false;
+  if(D.compare && prevSeries && prevSeries.length && series){
+    const c=series.reduce((a,x)=>a+(+x.v||0),0), pr=prevSeries.reduce((a,x)=>a+(+x.v||0),0);
+    if(pr!==0){ p=(c-pr)/pr*100; period=true; }
+  }
+  if(p==null) p=flow7(series);
   if(p!=null){ const flat=Math.abs(p)<0.05, up=p>=0; let good=goodWhenUp===null?null:(goodWhenUp?up:!up);
     const cls=flat?'delta-flat':(good===true?'delta-up':(good===false?'delta-down':'delta-neutral'));
     const arrow=flat?'→':(up?'▲':'▼'); const sign=(!flat&&up)?'+':'';
-    badge='<span class="delta '+cls+'">'+arrow+' '+sign+(Math.round(p*10)/10).toLocaleString('sk-SK')+' % · 7d</span>';
+    badge='<span class="delta '+cls+'">'+arrow+' '+sign+(Math.round(p*10)/10).toLocaleString('sk-SK')+' % · '+(period?'vs pred.':'7d')+'</span>';
   }
   return '<div class="ns"><div class="nslabel">'+label+'</div><div class="nsrow"><span class="nsval">'+valueHtml+'</span>'+badge+'</div></div>';
 }
@@ -241,9 +256,12 @@ function render(d){
   const roasTotal=spendTotal>0?valTotal/spendTotal:null;
   h+='<div class="north">';
   const igViews=(mo&&mo.instagram&&mo.instagram.views!=null)?mo.instagram.views:null;
-  h+=nsTile('PPC výdavky'+W, eur(spendTotal), spendSeries, null);
+  const ps=d.prevSeries||{};
+  const prevSpend=sumSeries([ps.ppc_meta].concat(gIds.map(id=>ps['gads_'+id])));
+  const prevSess=sumSeries(Object.keys(d.web.ga4||{}).map(id=>ps['ga4_'+id]));
+  h+=nsTile('PPC výdavky'+W, eur(spendTotal), spendSeries, null, prevSpend);
   h+=nsTile('IG zhliadnutia'+W, igViews==null?'–':fmt(igViews), null, true);
-  h+=nsTile('Web návštevy'+W, fmt(sessTotal), sessSeries, true);
+  h+=nsTile('Web návštevy'+W, fmt(sessTotal), sessSeries, true, prevSess);
   h+=nsTile('Sledovatelia spolu', fmt(folTotal), null, true);
   h+='</div>';
   h+='<div class="nsnote">⚠ <b>ROAS na kartách = hodnota nákupov nahlásená reklamami</b> (Meta/Google pixel, vrátane view-through – preto býva vysoký) ÷ výdavky. <b>NIE sú to reálne tržby zo Shoptetu</b> (ten zatiaľ nie je napojený) a cez platformy sa môže tá istá objednávka počítať viackrát. Skutočný ROAS z tržieb až po napojení Shoptet API.</div>';
@@ -378,7 +396,7 @@ function openDetail(key){
       '<div class="chip"><div class="ck">Maximum</div><div class="cv">'+fmtUnit(st.max,unit)+'</div></div>'+
       '<div class="chip"><div class="ck">Minimum</div><div class="cv">'+fmtUnit(st.min,unit)+'</div></div>'+
       '<div class="chip"><div class="ck">Najlepší deň</div><div class="cv">'+st.bestDay+'</div></div>'+
-      '<div class="chip"><div class="ck">7-dňová zmena</div><div class="cv">'+deltaBadge(key, desc.goodWhenUp)+'</div></div>';
+      '<div class="chip"><div class="ck">Zmena</div><div class="cv">'+deltaBadge(key, desc.goodWhenUp)+'</div></div>';
   } else chips.innerHTML='';
 
   // rows
