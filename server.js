@@ -441,7 +441,7 @@ async function buildStats(opts) {
   if (cfg && cfg.openai && cfg.openai.admin_key) {
     const oc = await run('openai', openaiCost);
     if (oc) {
-      result.openai = { spend_eur: oc.spend_eur, spend_usd: oc.spend_usd, fx: oc.fx };
+      result.openai = { spend_eur: oc.spend_eur, spend_usd: oc.spend_usd, fx: oc.fx, label: (cfg.openai.label || 'Luxia (chatbot)') };
       result.series.openai_cost = oc.series;
       result.deltas.openai_cost = { pct: flow7(oc.series), basis: 'flow7' };
     }
