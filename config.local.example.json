@@ -52,5 +52,12 @@
     "access_token": "",
     "advertiser_id": "",
     "business_id": ""
+  },
+
+  "shoptet": {
+    "_info": "Shoptet pre REÁLNE tržby + skutočný ROAS. POTREBNÉ: Shoptet Premium (privátny API token) ALEBO vlastný addon. private_api_token = token z admin → Prepojenie → API. eshop_url = napr. https://12345.myshoptet.com. api_base = základ API (default Shoptet). Po vyplnení dorobíme a otestujeme naživo.",
+    "private_api_token": "",
+    "eshop_url": "",
+    "api_base": "https://api.myshoptet.com/api"
   }
 }
