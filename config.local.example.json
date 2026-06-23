@@ -59,5 +59,11 @@
     "private_api_token": "",
     "eshop_url": "",
     "api_base": "https://api.myshoptet.com/api"
+  },
+
+  "openai": {
+    "_info": "Spotreba OpenAI API v €. admin_key MUSÍ byť ADMIN kľúč (sk-admin-…) z platform.openai.com/settings/organization/admin-keys – bežný projektový kľúč (sk-proj-…) náklady nečíta. Náklady sú v USD, prepočítajú sa kurzom usd_to_eur.",
+    "admin_key": "",
+    "usd_to_eur": 0.92
   }
 }

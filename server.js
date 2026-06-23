@@ -343,6 +343,31 @@ async function metaDebug() {
   } catch (e) { return { error: String(e.message || e) }; }
 }
 
+// ── OpenAI API spotreba (náklady) – Costs API, vyžaduje ADMIN kľúč (sk-admin-…) ──
+// Vracia denné náklady v USD; prepočítame na € kurzom z configu (openai.usd_to_eur).
+async function openaiCost() {
+  const o = (cfg && cfg.openai) || {};
+  const key = o.admin_key;
+  if (!key) throw new Error('chýba openai.admin_key (admin kľúč sk-admin-…)');
+  const fx = (o.usd_to_eur != null) ? num(o.usd_to_eur) : 0.92;
+  const startUnix = Math.floor(new Date(RANGE.start + 'T00:00:00Z').getTime() / 1000);
+  const days = Math.max(1, Math.min(180, RANGE.days || 30));
+  const url = 'https://api.openai.com/v1/organization/costs?start_time=' + startUnix + '&bucket_width=1d&limit=' + days;
+  const r = await fetch(url, { headers: { 'Authorization': 'Bearer ' + key } });
+  const j = await r.json();
+  if (j.error) throw new Error('OpenAI: ' + (j.error.message || JSON.stringify(j.error)));
+  let usd = 0; const series = [];
+  (j.data || []).forEach((b) => {
+    let dayUsd = 0;
+    (b.results || []).forEach((res) => { dayUsd += num(res.amount && res.amount.value); });
+    usd += dayUsd;
+    const d = new Date(num(b.start_time) * 1000).toISOString().slice(0, 10);
+    series.push({ d, v: dayUsd * fx });
+  });
+  series.sort((a, b) => a.d < b.d ? -1 : 1);
+  return { spend_eur: usd * fx, spend_usd: usd, fx, series };
+}
+
 // ── Agregátor ──
 // opts: { days?:N, start?:'YYYY-MM-DD', end?:'YYYY-MM-DD', compare?:bool }
 async function buildStats(opts) {
@@ -411,6 +436,16 @@ async function buildStats(opts) {
   // ── Top obsah na Instagrame ──
   const igId = meta && meta._igId;
   if (igId) result.top_content = await run('ig_top', () => igTopContent(igId));
+
+  // ── OpenAI API spotreba (€) ──
+  if (cfg && cfg.openai && cfg.openai.admin_key) {
+    const oc = await run('openai', openaiCost);
+    if (oc) {
+      result.openai = { spend_eur: oc.spend_eur, spend_usd: oc.spend_usd, fx: oc.fx };
+      result.series.openai_cost = oc.series;
+      result.deltas.openai_cost = { pct: flow7(oc.series), basis: 'flow7' };
+    }
+  }
 
   // ── Série + delty ──
   const setFlow = (key, obj) => {

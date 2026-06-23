@@ -400,6 +400,15 @@ function render(d){
   });
   h+='</div>';
 
+  // ── NÁKLADY — OpenAI ──
+  if(d.openai){
+    h+='<h2>Náklady — nástroje'+W+'</h2><div class="grid">';
+    h+=cardHTML({key:'openai_cost',icon:'🤖',title:'OpenAI API',tag:'spotreba',goodWhenUp:null,
+      big:{label:'Spotreba'+W,value:eur(d.openai.spend_eur)},
+      rows:[{k:'V USD',v:(d.openai.spend_usd||0).toFixed(2)+' $'},{k:'Kurz USD→€',v:(d.openai.fx||0).toFixed(3)}],unit:'eur'});
+    h+='</div>';
+  }
+
   // ── TikTok ──
   h+='<h2>TikTok</h2><div class="grid"><div class="card"><h3>🎵 TikTok</h3><div class="tag"></div><div class="muted">'+(d.tiktok&&d.tiktok.note||'neaktívne')+'</div></div></div>';
 
