@@ -78,6 +78,8 @@
   .tcstats{font-size:13px;font-weight:600;color:var(--gold)}
   .tcmeta{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-top:3px}
   .tcmeta a{color:var(--gold);text-decoration:none;font-size:14px;margin-left:4px}
+  .topup{color:var(--gold);text-decoration:none;font-weight:600}
+  .topup:hover{text-decoration:underline}
   .prov{font-size:10px;color:var(--orange);margin-top:6px}
   .err{color:var(--red);font-size:12px}
   .muted{color:var(--muted)}
@@ -400,16 +402,29 @@ function render(d){
   });
   h+='</div>';
 
-  // ── NÁKLADY — nástroje (Anthropic/Luxia + OpenAI) ──
-  if(d.anthropic || d.openai){
-    h+='<h2>Náklady — nástroje'+W+'</h2><div class="grid">';
-    if(d.anthropic) h+=cardHTML({key:'anthropic_cost',icon:'🟣',title:'Anthropic API',tag:(d.anthropic.label||'Luxia'),goodWhenUp:null,
-      big:{label:'Spotreba'+W,value:(d.anthropic.spend_eur||0).toFixed(2)+' €'},
-      rows:[{k:'V USD',v:(d.anthropic.spend_usd||0).toFixed(2)+' $'},{k:'Kurz USD→€',v:(d.anthropic.fx||0).toFixed(3)}],unit:'eur'});
-    if(d.openai) h+=cardHTML({key:'openai_cost',icon:'🤖',title:'OpenAI API',tag:(d.openai.label||'spotreba'),goodWhenUp:null,
-      big:{label:'Spotreba'+W,value:(d.openai.spend_eur||0).toFixed(2)+' €'},
-      rows:[{k:'V USD',v:(d.openai.spend_usd||0).toFixed(4)+' $'},{k:'Kurz USD→€',v:(d.openai.fx||0).toFixed(3)}],unit:'eur'});
-    h+='</div>';
+  // ── NÁKLADY — API kľúče (Anthropic per kľúč + OpenAI) ──
+  if((d.anthropic && d.anthropic.keys) || d.openai){
+    h+='<h2>Náklady — API kľúče'+W+'</h2>';
+    if(d.anthropic && d.anthropic.keys){
+      const a=d.anthropic;
+      h+='<div class="north"><div class="ns"><div class="nslabel">Anthropic — kľúče spolu'+W+'</div>'
+        +'<div class="nsrow"><span class="nsval">'+(a.total_eur||0).toFixed(2)+' €</span><span class="delta delta-neutral">'+(a.total_usd||0).toFixed(2)+' $</span></div>'
+        +(a.credit_eur!=null?'<div class="nslabel" style="margin-top:6px">Kredit ostáva: <b style="color:var(--gold)">'+a.credit_eur.toFixed(2)+' €</b></div>':'')
+        +'<div style="margin-top:6px"><a class="topup" href="'+a.topup_url+'" target="_blank" rel="noopener">💳 doplniť kredit ↗</a></div></div></div>';
+      h+='<div class="grid">';
+      (a.keys||[]).forEach(k=> h+=cardHTML({key:'anth_'+k.id,icon:'🟣',title:k.name,tag:'Anthropic kľúč',goodWhenUp:null,
+        big:{label:'Spotreba'+W,value:(k.spend_eur||0).toFixed(2)+' €'},
+        rows:[{k:'V USD',v:(k.spend_usd||0).toFixed(2)+' $'}],unit:'eur'}));
+      h+='</div>';
+      h+='<div class="nsnote">Spotreba kľúčov je <b>odhad z usage × oficiálny cenník</b> – presné fakturované čísla nájdeš po kliknutí na „doplniť kredit". Tvoja osobná Claude spotreba (Claude Code/konzola) sem nepatrí, tu sú len volania cez API kľúče.</div>';
+    }
+    if(d.openai){
+      h+='<h2>OpenAI'+W+'</h2><div class="grid">';
+      h+=cardHTML({key:'openai_cost',icon:'🤖',title:'OpenAI API',tag:(d.openai.label||'spotreba'),goodWhenUp:null,
+        big:{label:'Spotreba'+W,value:(d.openai.spend_eur||0).toFixed(2)+' €'},
+        rows:[].concat(d.openai.credit_eur!=null?[{k:'Kredit ostáva',v:(d.openai.credit_eur||0).toFixed(2)+' €'}]:[]).concat([{k:'V USD',v:(d.openai.spend_usd||0).toFixed(4)+' $'},{k:'Doplniť',v:'<a class="topup" href="'+d.openai.topup_url+'" target="_blank" rel="noopener">💳 doplniť € ↗</a>'}]),unit:'eur'});
+      h+='</div>';
+    }
   }
 
   // ── TikTok ──

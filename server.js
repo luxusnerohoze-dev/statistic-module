@@ -368,29 +368,49 @@ async function openaiCost() {
   return { spend_eur: usd * fx, spend_usd: usd, fx, series };
 }
 
-// ── Anthropic (Claude) API spotreba – Cost Report API, ADMIN kľúč (sk-ant-admin…) ──
-// Toto je spotreba Luxie (chatbot beží na Anthropic API). Náklady v USD → prepočet na €.
+// ── Anthropic (Claude) API spotreba PER KĽÚČ – Usage Report × cenník ──
+const ANTH_RATES = {
+  opus:   { i: 15e-6, o: 75e-6, cw: 18.75e-6, cr: 1.5e-6 },
+  sonnet: { i: 3e-6,  o: 15e-6, cw: 3.75e-6,  cr: 0.3e-6 },
+  haiku:  { i: 1e-6,  o: 5e-6,  cw: 1.25e-6,  cr: 0.1e-6 }
+};
+function anthRate(m) { m = (m || '').toLowerCase(); return m.indexOf('opus') >= 0 ? ANTH_RATES.opus : m.indexOf('haiku') >= 0 ? ANTH_RATES.haiku : ANTH_RATES.sonnet; }
+function anthRowUsd(r) {
+  const R = anthRate(r.model); const cc = r.cache_creation || {};
+  const cw = num(cc.ephemeral_1h_input_tokens) + num(cc.ephemeral_5m_input_tokens);
+  return num(r.uncached_input_tokens) * R.i + num(r.output_tokens) * R.o + cw * R.cw + num(r.cache_read_input_tokens) * R.cr;
+}
 async function anthropicCost() {
   const o = (cfg && cfg.anthropic) || {};
   const key = o.admin_key;
   if (!key) throw new Error('chýba anthropic.admin_key (admin kľúč sk-ant-admin…)');
   const fx = (o.usd_to_eur != null) ? num(o.usd_to_eur) : 0.92;
+  const H = { 'x-api-key': key, 'anthropic-version': '2023-06-01' };
   const days = Math.max(1, Math.min(180, RANGE.days || 30));
-  const url = 'https://api.anthropic.com/v1/organizations/cost_report?starting_at=' + RANGE.start + 'T00:00:00Z&bucket_width=1d&limit=' + (days + 1);
-  const r = await fetch(url, { headers: { 'x-api-key': key, 'anthropic-version': '2023-06-01' } });
+  const names = {};
+  try { const ak = await (await fetch('https://api.anthropic.com/v1/organizations/api_keys?limit=100', { headers: H })).json(); (ak.data || []).forEach((x) => { names[x.id] = x.name; }); } catch (e) {}
+  const url = 'https://api.anthropic.com/v1/organizations/usage_report/messages?starting_at=' + RANGE.start + 'T00:00:00Z&bucket_width=1d&limit=' + (days + 1) + '&group_by[]=api_key_id&group_by[]=model';
+  const r = await fetch(url, { headers: H });
   const j = await r.json();
-  if (j.type === 'error' || j.error) throw new Error('Anthropic: ' + ((j.error && j.error.message) || JSON.stringify(j).slice(0, 120)));
-  let usd = 0; const series = [];
+  if (j.type === 'error' || j.error) throw new Error('Anthropic usage: ' + ((j.error && j.error.message) || JSON.stringify(j).slice(0, 120)));
+  const keys = {};
   (j.data || []).forEach((b) => {
     const d = (b.starting_at || '').slice(0, 10);
     if (d < RANGE.start || d > RANGE.end) return;
-    let dayUsd = 0;
-    (b.results || []).forEach((res) => { dayUsd += num(res.amount); });
-    usd += dayUsd;
-    series.push({ d, v: dayUsd * fx });
+    (b.results || []).forEach((res) => {
+      const id = res.api_key_id; if (!id) return;
+      const usd = anthRowUsd(res);
+      const k = keys[id] || (keys[id] = { usd: 0, byDay: {} });
+      k.usd += usd; k.byDay[d] = (k.byDay[d] || 0) + usd;
+    });
   });
-  series.sort((a, b) => a.d < b.d ? -1 : 1);
-  return { spend_eur: usd * fx, spend_usd: usd, fx, series, label: (o.label || 'Luxia (chatbot)') };
+  let totUsd = 0;
+  const list = Object.keys(keys).map((id) => {
+    const k = keys[id]; totUsd += k.usd;
+    const series = Object.keys(k.byDay).sort().map((d) => ({ d, v: k.byDay[d] * fx }));
+    return { id, name: names[id] || id, spend_usd: k.usd, spend_eur: k.usd * fx, series };
+  }).sort((a, b) => b.spend_usd - a.spend_usd);
+  return { keys: list, total_usd: totUsd, total_eur: totUsd * fx, fx };
 }
 
 // ── Agregátor ──
@@ -466,19 +486,23 @@ async function buildStats(opts) {
   if (cfg && cfg.openai && cfg.openai.admin_key) {
     const oc = await run('openai', openaiCost);
     if (oc) {
-      result.openai = { spend_eur: oc.spend_eur, spend_usd: oc.spend_usd, fx: oc.fx, label: (cfg.openai.label || 'OpenAI') };
+      result.openai = { spend_eur: oc.spend_eur, spend_usd: oc.spend_usd, fx: oc.fx, label: (cfg.openai.label || 'OpenAI'), topup_url: (cfg.openai.topup_url || 'https://platform.openai.com/settings/organization/billing/overview'), credit_eur: (cfg.openai.credit_eur != null ? num(cfg.openai.credit_eur) : null) };
       result.series.openai_cost = oc.series;
       result.deltas.openai_cost = { pct: flow7(oc.series), basis: 'flow7' };
     }
   }
 
-  // ── Anthropic (Claude) API spotreba – Luxia ──
+  // ── Anthropic (Claude) API spotreba – rozpis po kľúčoch ──
   if (cfg && cfg.anthropic && cfg.anthropic.admin_key) {
     const ac = await run('anthropic', anthropicCost);
     if (ac) {
-      result.anthropic = { spend_eur: ac.spend_eur, spend_usd: ac.spend_usd, fx: ac.fx, label: ac.label };
-      result.series.anthropic_cost = ac.series;
-      result.deltas.anthropic_cost = { pct: flow7(ac.series), basis: 'flow7' };
+      result.anthropic = {
+        keys: ac.keys.map((k) => ({ id: k.id, name: k.name, spend_eur: k.spend_eur, spend_usd: k.spend_usd })),
+        total_eur: ac.total_eur, total_usd: ac.total_usd, fx: ac.fx,
+        topup_url: (cfg.anthropic.topup_url || 'https://console.anthropic.com/settings/billing'),
+        credit_eur: (cfg.anthropic.credit_eur != null ? num(cfg.anthropic.credit_eur) : null)
+      };
+      ac.keys.forEach((k) => { result.series['anth_' + k.id] = k.series; result.deltas['anth_' + k.id] = { pct: flow7(k.series), basis: 'flow7' }; });
     }
   }
 
