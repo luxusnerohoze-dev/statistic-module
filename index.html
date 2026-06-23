@@ -404,8 +404,8 @@ function render(d){
   if(d.openai){
     h+='<h2>Náklady — nástroje'+W+'</h2><div class="grid">';
     h+=cardHTML({key:'openai_cost',icon:'🤖',title:'OpenAI API',tag:'spotreba',goodWhenUp:null,
-      big:{label:'Spotreba'+W,value:eur(d.openai.spend_eur)},
-      rows:[{k:'V USD',v:(d.openai.spend_usd||0).toFixed(2)+' $'},{k:'Kurz USD→€',v:(d.openai.fx||0).toFixed(3)}],unit:'eur'});
+      big:{label:'Spotreba'+W,value:(d.openai.spend_eur||0).toFixed(2)+' €'},
+      rows:[{k:'V USD',v:(d.openai.spend_usd||0).toFixed(4)+' $'},{k:'Kurz USD→€',v:(d.openai.fx||0).toFixed(3)}],unit:'eur'});
     h+='</div>';
   }
 
